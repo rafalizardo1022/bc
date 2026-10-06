@@ -44,9 +44,13 @@ public:
     void resetOffset(); //Re-centre the map on the own-ship
     void updateSelectedShip(irr::s32 index); //To be called from eventReceiver, where index is from the combo box
     void updateSelectedLeg(irr::s32 index); //To be called from eventReceiver, where index is from the combo box
+    void clearSelectedLeg();
     void setMouseDown(bool isMouseDown); //To be called from event receiver, each time mouse left click state changes.
     void increaseZoom();
     void decreaseZoom();
+    void centreMapAtScreenPoint(irr::core::position2d<irr::s32> screenPoint);
+    bool calculateChangeLegToScreenCentre(irr::s32 ship, irr::s32 networkLeg, irr::f32 requestedSpeed, irr::s32& commandLeg, irr::f32& legCourse, irr::f32& legSpeed, irr::f32& legDistance) const;
+    bool calculateAddLegToScreenCentre(irr::s32 ship, irr::f32 requestedSpeed, irr::s32& commandAfterLeg, irr::f32& legCourse, irr::f32& legSpeed, irr::f32& legDistance) const;
 
 private:
 
@@ -79,9 +83,14 @@ private:
     irr::s32 mapOffsetZ;
 
     std::vector<AISData> aisShips;
+    irr::f32 lastTime;
+    std::vector<OtherShipDisplayData> lastOtherShipsData;
 
     irr::s32 selectedShip; //Own ship as -1, other ships as 0 upwards
     irr::s32 selectedLeg; //No leg as -1, legs as 0 upwards
+
+    bool getRoutePositionForLeg(irr::s32 ship, irr::s32 legIndex, irr::core::vector2df& routePosition) const;
+    bool calculateLegFromPositionToScreenCentre(const irr::core::vector2df& startPosition, irr::f32& legCourse, irr::f32& legDistance) const;
 
 };
 

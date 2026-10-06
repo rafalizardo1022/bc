@@ -83,6 +83,17 @@
                     model->changeLeg(ship,leg,legCourse,legSpeed,legDistance);
 
                 }
+                if (id == GUIMain::GUI_ID_CHANGELEGTOCENTRE_BUTTON) {
+                    int ship = gui->getSelectedShip();
+                    int leg = gui->getSelectedLeg();
+
+                    model->changeLegToScreenCentre(ship, leg, gui->getEditBoxSpeed());
+                    gui->updateEditBoxes();
+                }
+                if (id == GUIMain::GUI_ID_CLEARLEG_BUTTON) {
+                    model->clearSelectedLeg();
+                    gui->updateEditBoxes();
+                }
                 if (id == GUIMain::GUI_ID_DELETELEG_BUTTON) {
                     int ship = gui->getSelectedShip();
                     int leg = gui->getSelectedLeg();
@@ -104,6 +115,13 @@
                     //Use model method to add leg
                     model->addLeg(ship,leg,legCourse,legSpeed,legDistance);
 
+                }
+                if (id == GUIMain::GUI_ID_ADDLEGTOCENTRE_BUTTON) {
+                    int ship = gui->getSelectedShip();
+                    int leg = gui->getSelectedLeg();
+
+                    model->addLegToScreenCentre(ship, leg, gui->getEditBoxSpeed());
+                    gui->updateEditBoxes();
                 }
                 if (id == GUIMain::GUI_ID_MOVESHIP_BUTTON) {
 
@@ -219,6 +237,18 @@
 		//From mouse
 		if (event.EventType == irr::EET_MOUSE_INPUT_EVENT) {
 
+            if (event.MouseInput.Event == irr::EMIE_MOUSE_WHEEL ) {
+                irr::gui::IGUIElement* overElement = device->getGUIEnvironment()->getRootGUIElement()->getElementFromPoint(device->getCursorControl()->getPosition());
+                if ( (overElement == 0 || overElement == device->getGUIEnvironment()->getRootGUIElement()) ) {
+                    if (event.MouseInput.Wheel > 0) {
+                        model->increaseZoom();
+                    } else if (event.MouseInput.Wheel < 0) {
+                        model->decreaseZoom();
+                    }
+                    return true;
+                }
+            }
+
             if (event.MouseInput.Event == irr::EMIE_LMOUSE_PRESSED_DOWN ) {
 
                 //Check if we're over a gui element, and if so ignore the click
@@ -230,6 +260,15 @@
 
             if (event.MouseInput.Event == irr::EMIE_LMOUSE_LEFT_UP ) {
                 model->setMouseDown(false);
+            }
+
+            if (event.MouseInput.Event == irr::EMIE_RMOUSE_PRESSED_DOWN ) {
+                irr::core::position2d<irr::s32> cursorPosition = device->getCursorControl()->getPosition();
+                irr::gui::IGUIElement* overElement = device->getGUIEnvironment()->getRootGUIElement()->getElementFromPoint(cursorPosition);
+                if ( (overElement == 0 || overElement == device->getGUIEnvironment()->getRootGUIElement()) ) {
+                    model->centreMapAtScreenPoint(cursorPosition);
+                    return true;
+                }
             }
 
 		} //end of mouse event

@@ -22,8 +22,74 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <cmath>
 
 //using namespace irr;
+
+namespace {
+
+void drawThickLine(irr::video::IVideoDriver* driver, const irr::core::position2d<irr::s32>& start, const irr::core::position2d<irr::s32>& end, irr::video::SColor colour, irr::s32 thickness)
+{
+    if (thickness < 1) {
+        thickness = 1;
+    }
+
+    const irr::s32 halfThickness = thickness / 2;
+    for (irr::s32 offset = -halfThickness; offset <= halfThickness; offset++) {
+        driver->draw2DLine(irr::core::position2d<irr::s32>(start.X + offset, start.Y), irr::core::position2d<irr::s32>(end.X + offset, end.Y), colour);
+        driver->draw2DLine(irr::core::position2d<irr::s32>(start.X, start.Y + offset), irr::core::position2d<irr::s32>(end.X, end.Y + offset), colour);
+    }
+}
+
+void drawArrowLine(irr::video::IVideoDriver* driver, const irr::core::position2d<irr::s32>& start, const irr::core::position2d<irr::s32>& end, irr::video::SColor colour, irr::s32 thickness, irr::s32 headSize)
+{
+    const irr::f32 deltaX = (irr::f32)(end.X - start.X);
+    const irr::f32 deltaY = (irr::f32)(end.Y - start.Y);
+    const irr::f32 length = sqrt(deltaX * deltaX + deltaY * deltaY);
+
+    if (length < 1.0f) {
+        return;
+    }
+
+    drawThickLine(driver, start, end, colour, thickness);
+
+    if (headSize < 6) {
+        headSize = 6;
+    }
+
+    const irr::f32 unitX = deltaX / length;
+    const irr::f32 unitY = deltaY / length;
+    const irr::f32 perpX = -unitY;
+    const irr::f32 perpY = unitX;
+    const irr::f32 wingWidth = headSize * 0.55f;
+
+    const irr::core::position2d<irr::s32> leftWing(
+        (irr::s32)(end.X - unitX * headSize + perpX * wingWidth),
+        (irr::s32)(end.Y - unitY * headSize + perpY * wingWidth));
+    const irr::core::position2d<irr::s32> rightWing(
+        (irr::s32)(end.X - unitX * headSize - perpX * wingWidth),
+        (irr::s32)(end.Y - unitY * headSize - perpY * wingWidth));
+
+    drawThickLine(driver, end, leftWing, colour, thickness);
+    drawThickLine(driver, end, rightWing, colour, thickness);
+}
+
+void drawPointMarker(irr::video::IVideoDriver* driver, irr::gui::IGUIEnvironment* guienv, const irr::core::position2d<irr::s32>& centre, irr::video::SColor colour, irr::s32 radius, const irr::core::stringw& label)
+{
+    if (radius < 3) {
+        radius = 3;
+    }
+
+    driver->draw2DRectangle(colour, irr::core::rect<irr::s32>(centre.X - radius, centre.Y - radius, centre.X + radius, centre.Y + radius));
+    driver->draw2DLine(irr::core::position2d<irr::s32>(centre.X - radius * 2, centre.Y), irr::core::position2d<irr::s32>(centre.X + radius * 2, centre.Y), colour);
+    driver->draw2DLine(irr::core::position2d<irr::s32>(centre.X, centre.Y - radius * 2), irr::core::position2d<irr::s32>(centre.X, centre.Y + radius * 2), colour);
+
+    if (label.size() > 0) {
+        guienv->getSkin()->getFont()->draw(label, irr::core::rect<irr::s32>(centre.X + radius + 2, centre.Y - radius * 3, centre.X + radius + 80, centre.Y + radius * 3), colour, false, true);
+    }
+}
+
+}
 
 GUIMain::GUIMain(irr::IrrlichtDevice* device, Lang* language)
 {
@@ -56,7 +122,6 @@ GUIMain::GUIMain(irr::IrrlichtDevice* device, Lang* language)
     irr::gui::IGUITab* mainTab = guiTabs->addTab(language->translate("main").c_str());
     irr::gui::IGUITab* failureTab = guiTabs->addTab(language->translate("failures").c_str());
     irr::gui::IGUITab* weatherTab = guiTabs->addTab(language->translate("weather").c_str());
-    irr::gui::IGUITab* extraTab = guiTabs->addTab(language->translate("extraControls").c_str());
 
     //add data display:
     dataDisplay = guienv->addStaticText(L"", irr::core::rect<irr::s32>(1*fw,1*fh,24*fw,4*fh), true, true, mainTab, -1, true); //Actual text set later
@@ -90,11 +155,18 @@ GUIMain::GUIMain(irr::IrrlichtDevice* device, Lang* language)
     //Add buttons
     changeLeg       = guienv->addButton(irr::core::rect<irr::s32>     (1.000*fw, 13*fh,17.75*fw, 14*fh),mainTab,GUI_ID_CHANGE_BUTTON,language->translate("changeLeg").c_str());
     changeLegCourseSpeed = guienv->addButton(irr::core::rect<irr::s32>(18.25*fw, 13*fh,35.00*fw, 14*fh),mainTab, GUI_ID_CHANGE_COURSESPEED_BUTTON,language->translate("changeLegCourseSpeed").c_str());
-    
+
     addLeg          = guienv->addButton(irr::core::rect<irr::s32>     (1.000*fw, 14.25*fh,17.75*fw, 15.25*fh),mainTab,GUI_ID_ADDLEG_BUTTON,language->translate("addLeg").c_str());
     deleteLeg       = guienv->addButton(irr::core::rect<irr::s32>     (18.25*fw, 14.25*fh,35.00*fw, 15.25*fh),mainTab, GUI_ID_DELETELEG_BUTTON,language->translate("deleteLeg").c_str());
-    
-    moveShip        = guienv->addButton(irr::core::rect<irr::s32>     (1.000*fw, 15.5*fh,35.00*fw, 16.5*fh),mainTab, GUI_ID_MOVESHIP_BUTTON,language->translate("move").c_str());
+
+    changeLegToCentre = guienv->addButton(irr::core::rect<irr::s32>  (1.000*fw, 15.50*fh,17.75*fw, 16.50*fh),mainTab,GUI_ID_CHANGELEGTOCENTRE_BUTTON,L"Set to pointer");
+    addLegToCentre = guienv->addButton(irr::core::rect<irr::s32>     (18.25*fw, 15.50*fh,35.00*fw, 16.50*fh),mainTab,GUI_ID_ADDLEGTOCENTRE_BUTTON,L"Add turn");
+
+    clearLeg        = guienv->addButton(irr::core::rect<irr::s32>     (1.000*fw, 16.75*fh,17.75*fw, 17.75*fh),mainTab,GUI_ID_CLEARLEG_BUTTON,L"Clear leg");
+    moveShip        = guienv->addButton(irr::core::rect<irr::s32>     (18.25*fw, 16.75*fh,35.00*fw, 17.75*fh),mainTab, GUI_ID_MOVESHIP_BUTTON,language->translate("move").c_str());
+
+    turnPreview = guienv->addCheckBox(false, irr::core::rect<irr::s32>(1.0*fw,18.0*fh,3.0*fw,19.0*fh), mainTab);
+    guienv->addStaticText(L"Turn preview",irr::core::rect<irr::s32>(3.0*fw,18.0*fh,17.75*fw,19.0*fh),false,false,mainTab);
 
     //Add buttons to release and retrieve man overboard dummy
     releaseMOB = guienv->addButton(irr::core::rect<irr::s32>(29.0*fw,1*fh,35*fw,3.25*fh),mainTab,GUI_ID_RELEASEMOB_BUTTON,language->translate("releaseMOB").c_str());
@@ -170,19 +242,6 @@ GUIMain::GUIMain(irr::IrrlichtDevice* device, Lang* language)
     guienv->addButton(irr::core::rect<irr::s32>(1*fw,5.5*fh,35*fw,6.5*fh),failureTab,GUI_ID_FOLLOWUP_WORKING_BUTTON,language->translate("followUpWorking").c_str());
     guienv->addButton(irr::core::rect<irr::s32>(1*fw,6.5*fh,35*fw,7.5*fh),failureTab,GUI_ID_FOLLOWUP_FAILED_BUTTON,language->translate("followUpFailed").c_str());
     
-    // Display settings
-    guienv->addStaticText(language->translate("brightness").c_str(), irr::core::rect<irr::s32>(1 * fw, 0.5 * fh, 9 * fw, 1.5 * fh), false, true, extraTab)->setTextAlignment(irr::gui::EGUIA_CENTER, irr::gui::EGUIA_CENTER);
-    brightnessBar = new irr::gui::ScrollDial(irr::core::vector2d<irr::s32>(5 * fw, 5 * fh), 4 * fw, guienv, extraTab, GUI_ID_BRIGHTNESS_SCROLLBAR);
-    brightnessBar->setMax(100);
-    brightnessBar->setMin(0);
-    brightnessBar->setLargeStep(5);
-    brightnessBar->setSmallStep(1);
-    brightnessBar->setPos(100);
-
-    //Add buttons to allow user to change scenario time
-    guienv->addButton(irr::core::rect<irr::s32>(15.0 * fw, 1 * fh, 35 * fw, 3.25 * fh), extraTab, GUI_ID_TIMEFORWARD_BUTTON, language->translate("shiftTimeForward").c_str());
-    guienv->addButton(irr::core::rect<irr::s32>(15.0 * fw, 3.25 * fh, 35 * fw, 5.5 * fh), extraTab, GUI_ID_TIMEBACKWARD_BUTTON, language->translate("shiftTimeBackward").c_str());
-
     //This is used to track when the edit boxes need updating, when ship or legs have changed
     editBoxesNeedUpdating = false;
 
@@ -201,7 +260,6 @@ GUIMain::~GUIMain()
     windSpeedBar->drop();
     streamDirectionBar->drop();
     streamSpeedBar->drop();
-    brightnessBar->drop();
 }
 
 void GUIMain::updateEditBoxes()
@@ -322,7 +380,7 @@ void GUIMain::updateGuiData(irr::f32 time, irr::s32 mapOffsetX, irr::s32 mapOffs
     }
 
     //Update comboboxes for other ships and legs
-    updateDropDowns(otherShips,selectedShip,time);
+    updateDropDowns(otherShips,selectedShip,selectedLeg,time);
 
     //Update gui info for weather bars
     // TODO: Is the 'round' needed here?
@@ -345,6 +403,7 @@ void GUIMain::drawInformationOnMap(const irr::f32& time, const irr::s32& mapOffs
     irr::video::SColor black = irr::video::SColor(255, 0, 0, 0);
 
     //draw cross hairs
+    irr::video::IVideoDriver* videoDriver = device->getVideoDriver();
     irr::s32 width = device->getVideoDriver()->getScreenSize().Width;
     irr::s32 height = device->getVideoDriver()->getScreenSize().Height;
     irr::s32 screenCentreX = width/2;
@@ -396,17 +455,18 @@ void GUIMain::drawInformationOnMap(const irr::f32& time, const irr::s32& mapOffs
     //Draw location of ships
     irr::video::SColor shipColour = irr::video::SColor(255, 0, 0, 255);
     for(std::vector<OtherShipDisplayData>::const_iterator it = otherShips.begin(); it != otherShips.end(); ++it) {
+        const irr::s32 shipIndex = (irr::s32)(it - otherShips.begin());
         irr::s32 relPosX = (it->X - ownShipPosX)/metresPerPx + mapOffsetX;
         irr::s32 relPosY = (it->Z - ownShipPosZ)/metresPerPx - mapOffsetZ;
 
         device->getVideoDriver()->draw2DRectangle(shipColour.getInterpolated(black, getBrightnessScaling()), irr::core::rect<irr::s32>(screenCentreX - dotHalfWidth + relPosX, screenCentreY - dotHalfWidth - relPosY, screenCentreX + dotHalfWidth + relPosX, screenCentreY + dotHalfWidth - relPosY));
-        if (selectedShip == (it - otherShips.begin()) ) {
+        if (selectedShip == shipIndex ) {
             //This ship selected
             device->getVideoDriver()->draw2DPolygon(irr::core::position2d<irr::s32>(screenCentreX+relPosX,screenCentreY-relPosY),dotHalfWidth*4,shipColour.getInterpolated(black, getBrightnessScaling()), 10);
         }
 
         //number
-        int thisShipNumber = 1 + it - otherShips.begin();
+        int thisShipNumber = 1 + shipIndex;
         irr::core::stringw displayNumber = irr::core::stringw(thisShipNumber);
         
         if (it->SART) {
@@ -423,6 +483,7 @@ void GUIMain::drawInformationOnMap(const irr::f32& time, const irr::s32& mapOffs
         //Draw leg information for each ship
         irr::video::SColor lineColour = irr::video::SColor(255, 255, 255, 255);
         if (it->legs.size() > 0) {
+            irr::core::position2d<irr::s32> routeEnd(screenCentreX + relPosX, screenCentreY - relPosY);
 
             //Find current leg: This is the last leg, or the leg where the start time is in the past, and then next start time is in the future. Leg times are from the start of the day of the scenario start.
             irr::u32 currentLeg = 0;
@@ -458,7 +519,13 @@ void GUIMain::drawInformationOnMap(const irr::f32& time, const irr::s32& mapOffs
                         irr::core::position2d<irr::s32> startLine (legStartX, legStartY);
                         irr::core::position2d<irr::s32> endLine (legEndX, legEndY);
 
-                        device->getVideoDriver()->draw2DLine(startLine,endLine,lineColour.getInterpolated(black, getBrightnessScaling()));
+                        const bool isSelectedLeg = (selectedShip == shipIndex && selectedLeg == (irr::s32)currentLeg);
+                        const irr::video::SColor legColour = (isSelectedLeg ? irr::video::SColor(255, 255, 215, 0) : lineColour).getInterpolated(black, getBrightnessScaling());
+                        drawArrowLine(videoDriver, startLine, endLine, legColour, isSelectedLeg ? 2 : 1, dotHalfWidth * 5);
+                        routeEnd = endLine;
+                        if (selectedShip == shipIndex) {
+                            drawPointMarker(videoDriver, guienv, endLine, legColour, dotHalfWidth + 1, irr::core::stringw((irr::s32)currentLeg + 1));
+                        }
                     } //Not infinite
 
                 } //If currentLegTimeRemaining > 0
@@ -481,10 +548,23 @@ void GUIMain::drawInformationOnMap(const irr::f32& time, const irr::s32& mapOffs
                         irr::core::position2d<irr::s32> startLine (legStartX, legStartY);
                         irr::core::position2d<irr::s32> endLine (legEndX, legEndY);
 
-                        device->getVideoDriver()->draw2DLine(startLine,endLine, lineColour.getInterpolated(black, getBrightnessScaling()));
+                        const bool isSelectedLeg = (selectedShip == shipIndex && selectedLeg == (irr::s32)i);
+                        const irr::video::SColor legColour = (isSelectedLeg ? irr::video::SColor(255, 255, 215, 0) : lineColour).getInterpolated(black, getBrightnessScaling());
+                        drawArrowLine(videoDriver, startLine, endLine, legColour, isSelectedLeg ? 2 : 1, dotHalfWidth * 5);
+                        routeEnd = endLine;
+                        if (selectedShip == shipIndex) {
+                            drawPointMarker(videoDriver, guienv, endLine, legColour, dotHalfWidth + 1, irr::core::stringw((irr::s32)i + 1));
+                        }
                     } //Not infinite
                 } //Each leg, except last
             } //If not currently on the last leg
+
+            if (turnPreview != 0 && turnPreview->isChecked() && selectedShip == shipIndex) {
+                const irr::core::position2d<irr::s32> targetPoint(screenCentreX, screenCentreY);
+                const irr::video::SColor previewColour = irr::video::SColor(230, 80, 255, 120).getInterpolated(black, getBrightnessScaling());
+                drawArrowLine(videoDriver, routeEnd, targetPoint, previewColour, 2, dotHalfWidth * 7);
+                drawPointMarker(videoDriver, guienv, routeEnd, previewColour, dotHalfWidth + 2, L"last");
+            }
         }//If Legs.size() >0
     } //Loop for each ship
 
@@ -535,7 +615,7 @@ void GUIMain::drawInformationOnMap(const irr::f32& time, const irr::s32& mapOffs
 
 }
 
-void GUIMain::updateDropDowns(const std::vector<OtherShipDisplayData>& otherShips, irr::s32 selectedShip, irr::f32 time) {
+void GUIMain::updateDropDowns(const std::vector<OtherShipDisplayData>& otherShips, irr::s32 selectedShip, irr::s32 selectedLeg, irr::f32 time) {
 
 //Update drop down menus for ships and legs
     if(shipSelector->getItemCount() != otherShips.size() + 1) {
@@ -568,6 +648,11 @@ void GUIMain::updateDropDowns(const std::vector<OtherShipDisplayData>& otherShip
         legSelector->clear();
         for(irr::u32 i = 0; i<selectedShipNoLegs; i++) {
             legSelector->addItem(irr::core::stringw(i+1).c_str());
+        }
+        if (selectedShipNoLegs > 0 && selectedLeg >= 0 && selectedLeg < selectedShipNoLegs) {
+            legSelector->setSelected(selectedLeg);
+        } else {
+            legSelector->setSelected(-1);
         }
         manuallyTriggerGUIEvent((irr::gui::IGUIElement*)legSelector, irr::gui::EGET_LISTBOX_CHANGED ); //Trigger event here so any changes caused by the update are found
 
@@ -616,6 +701,12 @@ void GUIMain::updateDropDowns(const std::vector<OtherShipDisplayData>& otherShip
         } //At least one leg in selector
     } //Update descriptive text on legs, if they don't need updating entirely
 
+    if (selectedShipNoLegs > 0 && selectedLeg >= 0 && selectedLeg < selectedShipNoLegs) {
+        legSelector->setSelected(selectedLeg);
+    } else {
+        legSelector->setSelected(-1);
+    }
+
 }
 
 bool GUIMain::manuallyTriggerGUIEvent(irr::gui::IGUIElement* caller, irr::gui::EGUI_EVENT_TYPE eType) {
@@ -626,6 +717,27 @@ bool GUIMain::manuallyTriggerGUIEvent(irr::gui::IGUIElement* caller, irr::gui::E
     triggerUpdateEvent.GUIEvent.Element = 0;
     triggerUpdateEvent.GUIEvent.EventType = eType;
     return device->postEventFromUser(triggerUpdateEvent);
+}
+
+void GUIMain::adjustScrollBar(irr::gui::IGUIScrollBar* scrollBar, irr::s32 delta)
+{
+    if (scrollBar != 0) {
+        scrollBar->setPos(scrollBar->getPos() + delta);
+    }
+}
+
+void GUIMain::adjustDirectionBar(irr::gui::IGUIScrollBar* scrollBar, irr::s32 delta)
+{
+    if (scrollBar != 0) {
+        irr::s32 newPos = scrollBar->getPos() + delta;
+        while (newPos < 0) {
+            newPos += 360;
+        }
+        while (newPos >= 360) {
+            newPos -= 360;
+        }
+        scrollBar->setPos(newPos);
+    }
 }
 
 irr::f32 GUIMain::getEditBoxCourse() const {
@@ -699,8 +811,40 @@ bool GUIMain::getStreamOverride() const {
     return (streamOverrideBox->isChecked());
 }
 
+void GUIMain::adjustWeather(irr::s32 delta) {
+    adjustScrollBar(weatherBar, delta);
+}
+
+void GUIMain::adjustRain(irr::s32 delta) {
+    adjustScrollBar(rainBar, delta);
+}
+
+void GUIMain::adjustVisibility(irr::s32 delta) {
+    adjustScrollBar(visibilityBar, delta);
+}
+
+void GUIMain::adjustWindDirection(irr::s32 delta) {
+    adjustDirectionBar(windDirectionBar, delta);
+}
+
+void GUIMain::adjustWindSpeed(irr::s32 delta) {
+    adjustScrollBar(windSpeedBar, delta);
+}
+
+void GUIMain::adjustStreamDirection(irr::s32 delta) {
+    adjustDirectionBar(streamDirectionBar, delta);
+}
+
+void GUIMain::adjustStreamSpeed(irr::s32 delta) {
+    adjustScrollBar(streamSpeedBar, delta);
+}
+
+void GUIMain::setStreamOverride(bool enabled) {
+    streamOverrideBox->setChecked(enabled);
+}
+
 irr::f32 GUIMain::getBrightnessScaling() const {
-    return ((irr::f32)brightnessBar->getPos() / 100);
+    return 1.0f;
 }
 
 std::wstring GUIMain::f32To1dp(irr::f32 value)

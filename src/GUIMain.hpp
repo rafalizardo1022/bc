@@ -26,6 +26,7 @@
 #include "AzimuthDial.h"
 #include "GUIRectangle.hpp"
 #include "RadarCalculation.hpp"
+#include "InstrumentData.hpp"
 #include <vector>
 #include <string>
 
@@ -93,6 +94,7 @@ struct GUIData {
     // DEE_NOV22 some indication and or switch from normal steering to non follow up emergency steering
 
     irr::f32 tideHeight; // DEE FEB 23
+    InstrumentData instrumentData;
 };
 
 class GUIMain //Create, build and update GUI
@@ -220,6 +222,7 @@ public:
     void toggleShow2dInterface();
     void show2dInterface();
     void hide2dInterface();
+    bool getInstrumentDisplay() const;
     bool getShow3d() const;
     void zoomOn();
     void zoomOff();
@@ -410,6 +413,8 @@ private:
     bool guiPaused;
     bool guiCollided;
     bool showInterface;
+    bool instrumentDisplay;
+    int instrumentDisplayPage;
     bool controlsHidden; //If controls should always be hidden (if a secondary screen etc)
 
     bool hasDepthSounder;
@@ -417,6 +422,8 @@ private:
     bool hasGPS;
     bool showTideHeight;
     bool showCollided;
+    InstrumentData guiInstrumentData;
+    bool guiInstrumentDataInitialised;
 
     Lang* language;
     std::vector<std::string>* logMessages;
@@ -444,6 +451,31 @@ private:
     void draw2dRadar();
     void draw2dBearing();
     void drawCollisionWarning();
+    void drawFullInstrumentDisplay();
+    void drawNavigationInstrumentDisplay();
+    void drawPropulsionInstrumentDisplay();
+    void drawWeatherInstrumentDisplay();
+    void drawInstrumentPageBackground(const std::string& title, const std::string& pageLabel, irr::video::SColor text, irr::video::SColor muted, irr::video::SColor accent, irr::video::SColor warning);
+    void drawInstrumentPanel(const irr::core::rect<irr::s32>& rect, const std::string& title);
+    void drawInstrumentText(const std::string& text, const irr::core::rect<irr::s32>& rect, irr::video::SColor colour, bool centre=false, bool verticalCentre=false);
+    void drawInstrumentValue(const irr::core::rect<irr::s32>& rect, const std::string& label, const std::string& value, const std::string& unit, irr::video::SColor valueColour);
+    void drawInstrumentBar(const irr::core::rect<irr::s32>& rect, irr::f32 value, irr::f32 minimum, irr::f32 maximum, irr::video::SColor fillColour);
+    void drawInstrumentVerticalBar(const irr::core::rect<irr::s32>& rect, irr::f32 value, irr::f32 minimum, irr::f32 maximum, irr::video::SColor fillColour);
+    void drawInstrumentNeedle(const irr::core::position2d<irr::s32>& centre, irr::s32 radius, irr::f32 angleDeg, irr::video::SColor colour);
+    void drawInstrumentArrow(const irr::core::position2d<irr::s32>& start, const irr::core::position2d<irr::s32>& end, irr::video::SColor colour);
+    void drawInstrumentTriangle(const irr::core::position2d<irr::s32>& centre, irr::s32 size, irr::f32 angleDeg, irr::video::SColor colour);
+    void drawInstrumentCircleScale(const irr::core::position2d<irr::s32>& centre, irr::s32 radius, irr::f32 maximumValue, bool signedScale, irr::video::SColor muted, irr::video::SColor portColour, irr::video::SColor stbdColour);
+    void drawInstrumentGyroGraphic(const irr::core::rect<irr::s32>& rect);
+    void drawInstrumentRateOfTurnGraphic(const irr::core::rect<irr::s32>& rect);
+    void drawInstrumentWindCurrentGraphic(const irr::core::rect<irr::s32>& rect);
+    void drawInstrumentVesselMotionGraphic(const irr::core::rect<irr::s32>& rect);
+    void smoothInstrumentData(const InstrumentData& newData);
+    irr::f32 smoothInstrumentValue(irr::f32 current, irr::f32 target, irr::f32 alpha) const;
+    irr::f32 smoothInstrumentAngle(irr::f32 current, irr::f32 target, irr::f32 alpha) const;
+    std::string formatInstrumentFloat(irr::f32 value, int precision) const;
+    std::string formatInstrumentSignedFloat(irr::f32 value, int precision) const;
+    std::string formatInstrumentPercent(irr::f32 value) const;
+    std::string formatInstrumentPortStarboard(irr::f32 value, int precision) const;
     std::wstring f32To1dp(irr::f32 value);
     std::wstring f32To2dp(irr::f32 value);
     std::wstring f32To3dp(irr::f32 value);

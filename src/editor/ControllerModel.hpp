@@ -47,12 +47,15 @@ public:
     void setShipPosition(irr::s32 ship, irr::core::vector2df position); //To be called from eventReceiver
     void updateSelectedShip(irr::s32 index); //To be called from eventReceiver, where index is from the combo box
     void updateSelectedLeg(irr::s32 index); //To be called from eventReceiver, where index is from the combo box
+    void clearSelectedLeg();
     void setGeneralScenarioData(ScenarioData newData); //To be called from event receiver
     void checkName(); //Check if the scenario name chosen will mean that an existing scenario gets overwritten, and update flag in GeneralData
 
     void changeLeg(irr::s32 ship, irr::s32 index, irr::f32 legCourse, irr::f32 legSpeed, irr::f32 legDistance); //Change othership (or ownship) course, speed etc.
+    void changeLegToScreenCentre(irr::s32 ship, irr::s32 index, irr::f32 legSpeed);
     void deleteLeg(irr::s32 ship, irr::s32 index);
     void addLeg(irr::s32 ship, irr::s32 afterLegNumber, irr::f32 legCourse, irr::f32 legSpeed, irr::f32 legDistance);
+    void addLegToScreenCentre(irr::s32 ship, irr::s32 afterLegNumber, irr::f32 legSpeed);
     void setMMSI(irr::s32 ship, int mmsi);
     void setDrifting(irr::s32 ship, bool drifting);
     void setSARTOn(irr::s32 ship, bool SART);
@@ -68,6 +71,7 @@ public:
     void setMouseDown(bool isMouseDown); //To be called from event receiver, each time mouse left click state changes.
     void increaseZoom();
     void decreaseZoom();
+    void centreMapAtScreenPoint(irr::core::position2d<irr::s32> screenPoint);
 
 private:
 
@@ -106,6 +110,9 @@ private:
 
     irr::s32 selectedShip; //Own ship as -1, other ships as 0 upwards
     irr::s32 selectedLeg; //No leg as -1, legs as 0 upwards
+
+    bool getLegStartPosition(irr::s32 ship, irr::s32 index, irr::core::vector2df& startPosition) const;
+    bool calculateLegToPosition(irr::s32 ship, irr::s32 index, const irr::core::vector2df& targetPosition, irr::f32& legCourse, irr::f32& legDistance) const;
 
 };
 

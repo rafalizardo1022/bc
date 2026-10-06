@@ -18,6 +18,7 @@
 #include "../IniFile.hpp"
 #include "../Constants.hpp"
 #include "../Utilities.hpp"
+#include <cmath>
 #include <iostream>
 #include <iomanip>
 #include <fstream>
@@ -343,6 +344,17 @@ void ControllerModel::decreaseZoom()
     }
 }
 
+void ControllerModel::centreMapAtScreenPoint(irr::core::position2d<irr::s32> screenPoint)
+{
+    if (!(currentZoom < zoomLevels)) {
+        return;
+    }
+
+    const irr::core::dimension2d<irr::u32> screenSize = driver->getScreenSize();
+    mapOffsetX += (irr::s32)(screenSize.Width / 2) - screenPoint.X;
+    mapOffsetZ += (irr::s32)(screenSize.Height / 2) - screenPoint.Y;
+}
+
 void ControllerModel::setShipPosition(irr::s32 ship, irr::core::vector2df position)
 {
     if (ship==0) {
@@ -374,6 +386,11 @@ void ControllerModel::updateSelectedLeg(irr::s32 index) //To be called from even
 {
     selectedLeg = index;
     //No guarantee from this that the selected leg is valid
+}
+
+void ControllerModel::clearSelectedLeg()
+{
+    selectedLeg = -1;
 }
 
 void ControllerModel::setGeneralScenarioData(ScenarioData newData)
@@ -437,7 +454,7 @@ void ControllerModel::changeLeg(irr::s32 ship, irr::s32 index, irr::f32 legCours
     if (ship>0) {
         int otherShipIndex = ship-1;
         if (otherShipIndex < scenarioData->otherShipsData.size()) {
-            if (index < scenarioData->otherShipsData.at(otherShipIndex).legs.size()) {
+            if (index >= 0 && index < ((irr::s32)scenarioData->otherShipsData.at(otherShipIndex).legs.size() - 1)) {
                 scenarioData->otherShipsData.at(otherShipIndex).legs.at(index).bearing = legCourse;
                 scenarioData->otherShipsData.at(otherShipIndex).legs.at(index).speed = legSpeed;
                 scenarioData->otherShipsData.at(otherShipIndex).legs.at(index).distance = legDistance;
@@ -447,16 +464,103 @@ void ControllerModel::changeLeg(irr::s32 ship, irr::s32 index, irr::f32 legCours
     recalculateLegTimes(); //Subsequent leg start times may have changed, so recalculate these
 }
 
+bool ControllerModel::getLegStartPosition(irr::s32 ship, irr::s32 index, irr::core::vector2df& startPosition) const
+{
+    if (ship <= 0) {
+        return false;
+    }
+
+    const irr::s32 otherShipIndex = ship - 1;
+    if (otherShipIndex < 0 || otherShipIndex >= (irr::s32)scenarioData->otherShipsData.size()) {
+        return false;
+    }
+
+    const OtherShipData& shipData = scenarioData->otherShipsData.at(otherShipIndex);
+    const irr::s32 visibleLegs = (irr::s32)shipData.legs.size() - 1;
+    if (index < 0 || index > visibleLegs) {
+        return false;
+    }
+
+    startPosition.X = shipData.initialX;
+    startPosition.Y = shipData.initialZ;
+
+    for (irr::s32 thisLeg = 0; thisLeg < index && thisLeg < visibleLegs; thisLeg++) {
+        const irr::f32 legLengthM = shipData.legs.at(thisLeg).distance * M_IN_NM;
+        const irr::f32 legBearingRad = shipData.legs.at(thisLeg).bearing * RAD_IN_DEG;
+        startPosition.X += legLengthM * sin(legBearingRad);
+        startPosition.Y += legLengthM * cos(legBearingRad);
+    }
+
+    return true;
+}
+
+bool ControllerModel::calculateLegToPosition(irr::s32 ship, irr::s32 index, const irr::core::vector2df& targetPosition, irr::f32& legCourse, irr::f32& legDistance) const
+{
+    irr::core::vector2df startPosition;
+    if (!getLegStartPosition(ship, index, startPosition)) {
+        return false;
+    }
+
+    const irr::f32 deltaX = targetPosition.X - startPosition.X;
+    const irr::f32 deltaZ = targetPosition.Y - startPosition.Y;
+    const irr::f32 distanceM = sqrt(deltaX * deltaX + deltaZ * deltaZ);
+
+    legCourse = atan2(deltaX, deltaZ) * DEG_IN_RAD;
+    while (legCourse < 0) {
+        legCourse += 360.0f;
+    }
+    while (legCourse >= 360.0f) {
+        legCourse -= 360.0f;
+    }
+    legDistance = distanceM / M_IN_NM;
+
+    return true;
+}
+
+void ControllerModel::changeLegToScreenCentre(irr::s32 ship, irr::s32 index, irr::f32 legSpeed)
+{
+    if (ship <= 0) {
+        return;
+    }
+
+    const irr::s32 otherShipIndex = ship - 1;
+    if (otherShipIndex < 0 || otherShipIndex >= (irr::s32)scenarioData->otherShipsData.size()) {
+        return;
+    }
+
+    std::vector<LegData>& legs = scenarioData->otherShipsData.at(otherShipIndex).legs;
+    if (index < 0 || index >= ((irr::s32)legs.size() - 1)) {
+        return;
+    }
+
+    irr::f32 legCourse = 0;
+    irr::f32 legDistance = 0;
+    if (!calculateLegToPosition(ship, index, gui->getScreenCentrePosition(), legCourse, legDistance)) {
+        return;
+    }
+
+    if (fabs(legSpeed) < 0.01f) {
+        legSpeed = legs.at(index).speed;
+    }
+    if (fabs(legSpeed) < 0.01f) {
+        legSpeed = 5.0f;
+    }
+
+    changeLeg(ship, index, legCourse, legSpeed, legDistance);
+    selectedLeg = index;
+}
+
 void ControllerModel::deleteLeg(irr::s32 ship, irr::s32 index)
 {
     //If other ship:
     if (ship>0) {
         int otherShipIndex = ship-1;
         if (otherShipIndex < scenarioData->otherShipsData.size()) {
-            if (index < scenarioData->otherShipsData.at(otherShipIndex).legs.size()) {
+            if (index >= 0 && index < ((irr::s32)scenarioData->otherShipsData.at(otherShipIndex).legs.size() - 1)) {
                 //Delete this leg
                 scenarioData->otherShipsData.at(otherShipIndex).legs.erase(scenarioData->otherShipsData.at(otherShipIndex).legs.begin() + index);
                 recalculateLegTimes(); //Subsequent leg start times may have changed, so recalculate these
+                selectedLeg = -1;
             }
         }
     }
@@ -530,6 +634,41 @@ void ControllerModel::addLeg(irr::s32 ship, irr::s32 afterLegNumber, irr::f32 le
         }
     }
     recalculateLegTimes(); //Subsequent leg start times may have changed, so recalculate these
+}
+
+void ControllerModel::addLegToScreenCentre(irr::s32 ship, irr::s32 afterLegNumber, irr::f32 legSpeed)
+{
+    (void)afterLegNumber;
+
+    if (ship <= 0) {
+        return;
+    }
+
+    const irr::s32 otherShipIndex = ship - 1;
+    if (otherShipIndex < 0 || otherShipIndex >= (irr::s32)scenarioData->otherShipsData.size()) {
+        return;
+    }
+
+    std::vector<LegData>& legs = scenarioData->otherShipsData.at(otherShipIndex).legs;
+    const irr::s32 visibleLegs = (irr::s32)legs.size() - 1;
+    irr::s32 insertAfter = visibleLegs - 1;
+    const irr::s32 newLegIndex = insertAfter + 1;
+
+    irr::f32 legCourse = 0;
+    irr::f32 legDistance = 0;
+    if (!calculateLegToPosition(ship, newLegIndex, gui->getScreenCentrePosition(), legCourse, legDistance)) {
+        return;
+    }
+
+    if (fabs(legSpeed) < 0.01f && insertAfter >= 0 && insertAfter < visibleLegs) {
+        legSpeed = legs.at(insertAfter).speed;
+    }
+    if (fabs(legSpeed) < 0.01f) {
+        legSpeed = 5.0f;
+    }
+
+    addLeg(ship, insertAfter, legCourse, legSpeed, legDistance);
+    selectedLeg = newLegIndex;
 }
 
 void ControllerModel::addShip(std::string name, irr::core::vector2df position)

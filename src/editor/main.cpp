@@ -593,7 +593,7 @@ int main (int argc, char ** argv)
                 else {
                     thisShip.SART = false;
                 }
-                
+
                 int numberOfLegs = IniFile::iniFileTof32(otherShipIniFilename,IniFile::enumerate1("Legs",i));
 
                 irr::f32 legStartTime = scenarioData.startTime; //Legs start at the start of the scenario

@@ -30,6 +30,37 @@
 #include <cmath>
 #include <fstream>
 
+namespace
+{
+    irr::f32 normalise360(irr::f32 angle)
+    {
+        while (angle < 0) {
+            angle += 360;
+        }
+        while (angle >= 360) {
+            angle -= 360;
+        }
+        return angle;
+    }
+
+    irr::f32 normalise180(irr::f32 angle)
+    {
+        angle = normalise360(angle);
+        if (angle > 180) {
+            angle -= 360;
+        }
+        return angle;
+    }
+
+    irr::f32 directionFromVector(irr::f32 xComponent, irr::f32 zComponent)
+    {
+        if (xComponent == 0 && zComponent == 0) {
+            return 0;
+        }
+        return normalise360(std::atan2(xComponent, zComponent) * irr::core::RADTODEG);
+    }
+}
+
 #ifdef WITH_PROFILING
 #include "iprof.hpp"
 #else
@@ -347,6 +378,87 @@ SimulationModel::~SimulationModel()
         } else {
             return tide.getTidalStream(longitude,latitude,requestTime);
         }
+    }
+
+    InstrumentData SimulationModel::getInstrumentData() {
+        InstrumentData data;
+        data.valid = true;
+
+        data.timestamp = getTimestamp();
+        data.timeOffset = getTimeOffset();
+        data.scenarioTime = getTimeDelta();
+        data.accelerator = getAccelerator();
+
+        data.longitudeDeg = getLong();
+        data.latitudeDeg = getLat();
+        data.posX = getPosX();
+        data.posZ = getPosZ();
+
+        data.headingDeg = normalise360(getHeading());
+        data.cogDeg = normalise360(getCOG());
+        data.sogKts = getSOG() * MPS_TO_KTS;
+        data.speedThroughWaterKts = ownShip.getSpeedThroughWater() * MPS_TO_KTS;
+        data.rateOfTurnDegPerMin = getRateOfTurn() * RAD_PER_S_IN_DEG_PER_MINUTE;
+
+        data.depthM = getDepth();
+        data.maxSounderDepthM = getMaxSounderDepth();
+        data.depthBelowKeelM = getDepth() - ownShip.getDraught();
+
+        data.wheelDeg = getWheel();
+        data.rudderDeg = getRudder();
+        data.portEngineCommand = getPortEngine();
+        data.stbdEngineCommand = getStbdEngine();
+        data.portEngineRpm = std::fabs(getPortEngineRPM());
+        data.stbdEngineRpm = std::fabs(getStbdEngineRPM());
+        data.bowThruster = getBowThruster();
+        data.sternThruster = getSternThruster();
+
+        data.portSchottelDeg = getPortSchottel();
+        data.stbdSchottelDeg = getStbdSchottel();
+        data.portAzimuthThrustLever = getPortAzimuthThrustLever();
+        data.stbdAzimuthThrustLever = getStbdAzimuthThrustLever();
+
+        data.pitchDeg = ownShip.getPitch();
+        data.rollDeg = ownShip.getRoll();
+
+        data.weather = getWeather();
+        data.rain = getRain();
+        data.visibilityNm = getVisibility();
+        data.windDirectionTrueDeg = normalise360(getWindDirection());
+        data.windSpeedKts = getWindSpeed();
+
+        irr::f32 windFlowDirectionDeg = normalise360(data.windDirectionTrueDeg + 180);
+        irr::f32 windXKts = std::sin(windFlowDirectionDeg * irr::core::DEGTORAD) * data.windSpeedKts;
+        irr::f32 windZKts = std::cos(windFlowDirectionDeg * irr::core::DEGTORAD) * data.windSpeedKts;
+        irr::f32 shipXKts = std::sin(data.cogDeg * irr::core::DEGTORAD) * data.sogKts;
+        irr::f32 shipZKts = std::cos(data.cogDeg * irr::core::DEGTORAD) * data.sogKts;
+        irr::f32 apparentFlowXKts = windXKts - shipXKts;
+        irr::f32 apparentFlowZKts = windZKts - shipZKts;
+        irr::f32 apparentFlowDirectionDeg = directionFromVector(apparentFlowXKts, apparentFlowZKts);
+        data.apparentWindFromDeg = normalise360(apparentFlowDirectionDeg + 180);
+        data.apparentWindRelativeDeg = normalise360(data.apparentWindFromDeg - data.headingDeg);
+        data.apparentWindSpeedKts = std::sqrt(apparentFlowXKts * apparentFlowXKts + apparentFlowZKts * apparentFlowZKts);
+
+        data.currentDirectionDeg = normalise360(streamOverrideDirection);
+        data.currentSpeedKts = streamOverrideSpeed;
+        data.tideHeightM = tideHeight;
+
+        data.hasGps = hasGPS();
+        data.hasDepthSounder = hasDepthSounder();
+        data.isSingleEngine = isSingleEngine();
+        data.isAzimuthDrive = isAzimuthDrive();
+        data.isAzimuthAsternAllowed = isAzimuthAsternAllowed();
+        data.hasBowThruster = hasBowThruster();
+        data.hasSternThruster = hasSternThruster();
+        data.hasTurnIndicator = hasTurnIndicator();
+        data.streamOverride = getStreamOverride();
+        data.portClutch = getPortClutch();
+        data.stbdClutch = getStbdClutch();
+        data.rudderPump1 = getRudderPumpState(1);
+        data.rudderPump2 = getRudderPumpState(2);
+        data.emergencySteering = !ownShip.getFollowUpRudderWorking();
+
+        return data;
     }
 
    // void SimulationModel::getTime(irr::u8& hour, irr::u8& min, irr::u8& sec) const{
@@ -2095,6 +2207,7 @@ SimulationModel::~SimulationModel()
 // DEE vvvv units are rad per second
 	guiData->RateOfTurn = ownShip.getRateOfTurn();
 // DEE ^^^^
+        guiData->instrumentData = getInstrumentData();
         }{ IPROF("Update gui data");
         //send data to gui
         guiMain->updateGuiData(guiData); //Set GUI heading in degrees and speed (in m/s)

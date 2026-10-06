@@ -101,7 +101,8 @@ void NetworkSecondary::getScenarioFromNetwork(std::string& dataString) //Not use
                     (receivedString.substr(0,4) == "SCN2") ||
                     (receivedString.substr(0,4) == "SCN3") ||
                     (receivedString.substr(0,4) == "SCN4") ||
-                    (receivedString.substr(0,4) == "SCN5")) { //Check if it starts with SCN1-SCN5
+                    (receivedString.substr(0,4) == "SCN5") ||
+                    (receivedString.substr(0,4) == "SCN6")) { //Check if it starts with SCN1-SCN6
                     //If valid, use this string
                     dataString = receivedString;
                     // Break out of loop so we don't overwrite the scenario data

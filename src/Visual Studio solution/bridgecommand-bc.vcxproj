@@ -184,6 +184,8 @@
     <ClCompile Include="..\GUIRectangle.cpp" />
     <ClCompile Include="..\HeadingIndicator.cpp" />
     <ClCompile Include="..\IniFile.cpp" />
+    <ClCompile Include="..\InstrumentData.cpp" />
+    <ClCompile Include="..\InstrumentNetworkCodec.cpp" />
     <ClCompile Include="..\LandLights.cpp" />
     <ClCompile Include="..\LandObject.cpp" />
     <ClCompile Include="..\LandObjects.cpp" />
@@ -251,6 +253,8 @@
     <ClInclude Include="..\GUIRectangle.hpp" />
     <ClInclude Include="..\HeadingIndicator.h" />
     <ClInclude Include="..\IniFile.hpp" />
+    <ClInclude Include="..\InstrumentData.hpp" />
+    <ClInclude Include="..\InstrumentNetworkCodec.hpp" />
     <ClInclude Include="..\LandLights.hpp" />
     <ClInclude Include="..\LandObject.hpp" />
     <ClInclude Include="..\LandObjects.hpp" />

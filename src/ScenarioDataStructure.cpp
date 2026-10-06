@@ -101,10 +101,9 @@ void OtherShipData::deserialise(std::string data)
         drifting = Utilities::lexical_cast<bool>(splitData.at(5));
     }
     if (splitData.size() > 6) {
-        // Additional drifting entry (SCN5 only)
+        // Additional SART entry (SCN5 and later)
         SART = Utilities::lexical_cast<bool>(splitData.at(6));
     }
-
 }
 
 std::string OwnShipData::serialise(bool withSpaces)
@@ -222,10 +221,11 @@ void ScenarioData::deserialise(std::string data)
             dataPopulated = true; // Currently only used in scenario editor
         }
     } else if (splitData.size() == 16) {
-        if ((splitData.at(0) == "SCN3") || (splitData.at(0) == "SCN4") || (splitData.at(0) == "SCN5")) {
+        if ((splitData.at(0) == "SCN3") || (splitData.at(0) == "SCN4") || (splitData.at(0) == "SCN5") || (splitData.at(0) == "SCN6")) {
             // SCN3 allows for tidal information to be overridden from scenario
             // SCN4 adds drifting flag in other ship data
             // SCN5 adds SART flag in other ship data
+            // SCN6 was used briefly for instructor-controlled ship data and is still accepted for compatibility
             scenarioName = splitData.at(1);
             worldName = splitData.at(2);
             startTime = Utilities::lexical_cast<irr::f32>(splitData.at(3));

@@ -47,6 +47,9 @@ public:
         GUI_ID_CHANGE_BUTTON,
         GUI_ID_CHANGE_COURSESPEED_BUTTON,
         GUI_ID_ADDLEG_BUTTON,
+        GUI_ID_CHANGELEGTOCENTRE_BUTTON,
+        GUI_ID_ADDLEGTOCENTRE_BUTTON,
+        GUI_ID_CLEARLEG_BUTTON,
         GUI_ID_SETMMSI_BUTTON,
         GUI_ID_DELETELEG_BUTTON,
         GUI_ID_MOVESHIP_BUTTON,
@@ -67,10 +70,7 @@ public:
         GUI_ID_WINDSPEED_SCROLL_BAR,
         GUI_ID_STREAMDIRECTION_SCROLL_BAR,
         GUI_ID_STREAMSPEED_SCROLL_BAR,
-        GUI_ID_STREAMOVERRIDE_BOX,
-        GUI_ID_BRIGHTNESS_SCROLLBAR,
-        GUI_ID_TIMEFORWARD_BUTTON,
-        GUI_ID_TIMEBACKWARD_BUTTON
+        GUI_ID_STREAMOVERRIDE_BOX
     };
 
     void updateGuiData(irr::f32 time, irr::s32 mapOffsetX, irr::s32 mapOffsetZ, irr::f32 metresPerPx, irr::f32 ownShipPosX, irr::f32 ownShipPosZ, irr::f32 ownShipHeading, const std::vector<PositionData>& buoys, const std::vector<OtherShipDisplayData>& otherShips, const std::vector<AISData>& aisData, bool mobVisible, irr::f32 mobPosX, irr::f32 mobPosZ, irr::video::ITexture* displayMapTexture, irr::s32 selectedShip, irr::s32 selectedLeg, irr::f32 terrainLong, irr::f32 terrainLongExtent, irr::f32 terrainXWidth, irr::f32 terrainLat, irr::f32 terrainLatExtent, irr::f32 terrainZWidth, irr::f32 weather, irr::f32 visibility, irr::f32 rain, irr::f32 windDirection, irr::f32 windSpeed, irr::f32 streamDirection, irr::f32 streamSpeed, bool streamOverride);
@@ -90,6 +90,14 @@ public:
     irr::f32 getStreamDirection() const;
     irr::f32 getStreamSpeed() const;
     bool getStreamOverride() const;
+    void adjustWeather(irr::s32 delta);
+    void adjustRain(irr::s32 delta);
+    void adjustVisibility(irr::s32 delta);
+    void adjustWindDirection(irr::s32 delta);
+    void adjustWindSpeed(irr::s32 delta);
+    void adjustStreamDirection(irr::s32 delta);
+    void adjustStreamSpeed(irr::s32 delta);
+    void setStreamOverride(bool enabled);
     irr::f32 getBrightnessScaling() const;
 
 private:
@@ -118,6 +126,9 @@ private:
     irr::gui::IGUIButton* changeLegCourseSpeed;
     irr::gui::IGUIButton* addLeg;
     irr::gui::IGUIButton* deleteLeg;
+    irr::gui::IGUIButton* changeLegToCentre;
+    irr::gui::IGUIButton* addLegToCentre;
+    irr::gui::IGUIButton* clearLeg;
     irr::gui::IGUIButton* moveShip;
     irr::gui::IGUIButton* setMMSI;
     irr::gui::IGUIScrollBar* weatherBar;
@@ -132,15 +143,17 @@ private:
     irr::gui::IGUIScrollBar* streamDirectionBar;
     irr::gui::IGUIScrollBar* streamSpeedBar;
     irr::gui::IGUICheckBox* streamOverrideBox;
-    irr::gui::IGUIScrollBar* brightnessBar;
+    irr::gui::IGUICheckBox* turnPreview;
     irr::f32 mapCentreX;
     irr::f32 mapCentreZ;
 
     bool editBoxesNeedUpdating;
 
     void drawInformationOnMap(const irr::f32& time, const irr::s32& mapOffsetX, const irr::s32& mapOffsetZ, const irr::f32& metresPerPx, const irr::f32& ownShipPosX, const irr::f32& ownShipPosZ, const irr::f32& ownShipHeading, const std::vector<PositionData>& buoys, const std::vector<OtherShipDisplayData>& otherShips, const std::vector<AISData>& aisData, const irr::s32& selectedShip, const irr::s32& selectedLeg, const bool& mobVisible, const irr::f32& mobPosX, const irr::f32& mobPosZ);
-    void updateDropDowns(const std::vector<OtherShipDisplayData>& otherShips, irr::s32 selectedShip, irr::f32 time);
+    void updateDropDowns(const std::vector<OtherShipDisplayData>& otherShips, irr::s32 selectedShip, irr::s32 selectedLeg, irr::f32 time);
     bool manuallyTriggerGUIEvent(irr::gui::IGUIElement* caller, irr::gui::EGUI_EVENT_TYPE eType);
+    void adjustScrollBar(irr::gui::IGUIScrollBar* scrollBar, irr::s32 delta);
+    void adjustDirectionBar(irr::gui::IGUIScrollBar* scrollBar, irr::s32 delta);
     std::wstring f32To3dp(irr::f32 value);
     std::wstring f32To1dp(irr::f32 value);
 

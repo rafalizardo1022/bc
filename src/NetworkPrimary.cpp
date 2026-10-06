@@ -20,6 +20,7 @@
 #include "Utilities.hpp"
 #include "Constants.hpp"
 #include "Leg.hpp"
+#include "InstrumentNetworkCodec.hpp"
 #include <iostream>
 #include <cstdio>
 #include <vector>
@@ -470,21 +471,28 @@ void NetworkPrimary::sendNetwork(std::string aManualCmd)
     }
 
   if (stringToSend.length() > 0) {
+    sendPacketToPeers(stringToSend, scenarioPacket ? ENET_PACKET_FLAG_RELIABLE : 0);
+  }
 
-    // Type of packet - reliable for scenario data as we want to make sure some gets through!
-    enet_uint32 packetFlag = 0;
-    if (scenarioPacket) {
-      packetFlag = ENET_PACKET_FLAG_RELIABLE;
+  if (aManualCmd.empty() && model != 0 && model->getLoopNumber() % 5 == 0) {
+    sendPacketToPeers(generateSendStringInstrument(), 0);
+  }
+}
+
+void NetworkPrimary::sendPacketToPeers(const std::string& stringToSend, enet_uint32 packetFlag)
+{
+    if (stringToSend.length() == 0) {
+        return;
     }
 
     // Send data to connected peers
     for (int i = 0; i < client->peerCount; i++) {
-        
+
         // Skip non-connected peers
         if (client->peers[i].state != ENET_PEER_STATE_CONNECTED) {
             continue;
         }
-        
+
         /* Create a packet */
         ENetPacket* packet = enet_packet_create(stringToSend.c_str(),
             strlen(stringToSend.c_str()) + 1,
@@ -504,7 +512,6 @@ void NetworkPrimary::sendNetwork(std::string aManualCmd)
             std::cout << "Could not send packet to peer " << i << std::endl;
         }
     }
-  }
 }
 
 std::string NetworkPrimary::generateSendStringShort()
@@ -701,6 +708,11 @@ std::string NetworkPrimary::generateSendString()
     stringToSend.append(Utilities::lexical_cast<std::string>(model->getSternThruster()));
 
     return stringToSend;
+}
+
+std::string NetworkPrimary::generateSendStringInstrument()
+{
+    return InstrumentNetworkCodec::serialize(model->getInstrumentData());
 }
 
 std::string NetworkPrimary::generateSendStringScn()

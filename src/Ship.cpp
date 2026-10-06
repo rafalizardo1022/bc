@@ -62,6 +62,11 @@ irr::f32 Ship::getBreadth() const
     return breadth;
 }
 
+irr::f32 Ship::getDraught() const
+{
+    return draught;
+}
+
 irr::f32 Ship::getHeightCorrection() const
 {
     return heightCorrection;

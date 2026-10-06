@@ -36,6 +36,7 @@ class Ship
         irr::core::vector3df getPosition() const;
         irr::f32 getLength() const;
         irr::f32 getBreadth() const;
+        irr::f32 getDraught() const;
         irr::f32 getHeightCorrection() const;
         irr::f32 getEstimatedDisplacement() const;
         void setHeading(irr::f32 hdg);

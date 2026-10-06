@@ -51,7 +51,9 @@ private:
 
     std::string generateSendString(); //Prepare the normal data message to send
     std::string generateSendStringShort(); //Prepare the own ship only data message to send
+    std::string generateSendStringInstrument(); //Prepare the read-only instrument data message
     std::string generateSendStringScn(); //Prepare the 'Scn' message, with scenario information
+    void sendPacketToPeers(const std::string& stringToSend, enet_uint32 packetFlag);
     void sendNetwork(std::string aManualCmd="");
     void receiveNetwork();
 

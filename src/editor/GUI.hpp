@@ -68,7 +68,10 @@ public:
         GUI_ID_WINDDIRECTION_EDITBOX,
         GUI_ID_WINDSPEED_EDITBOX,
         GUI_ID_DRIFTING_CHECKBOX,
-        GUI_ID_SART_CHECKBOX
+        GUI_ID_SART_CHECKBOX,
+        GUI_ID_CHANGELEGTOCENTRE_BUTTON,
+        GUI_ID_ADDLEGTOCENTRE_BUTTON,
+        GUI_ID_CLEARLEG_BUTTON
     };
 
     void updateGuiData(ScenarioData scenarioInfo, irr::s32 mapOffsetX, irr::s32 mapOffsetZ, irr::f32 metresPerPx, const std::vector<PositionData>& buoys, const std::vector<PositionData>& landObjects, irr::video::ITexture* displayMapTexture, irr::s32 selectedShip, irr::s32 selectedLeg, irr::f32 terrainLong, irr::f32 terrainLongExtent, irr::f32 terrainXWidth, irr::f32 terrainLat, irr::f32 terrainLatExtent, irr::f32 terrainZWidth);
@@ -126,11 +129,15 @@ private:
 	irr::gui::IGUIButton* deleteShip;
     irr::gui::IGUIButton* addLeg;
     irr::gui::IGUIButton* deleteLeg;
+    irr::gui::IGUIButton* changeLegToCentre;
+    irr::gui::IGUIButton* addLegToCentre;
+    irr::gui::IGUIButton* clearLeg;
     irr::gui::IGUIButton* moveShip;
     irr::gui::IGUIButton* setMMSI;
 
     irr::gui::IGUICheckBox* isDrifting;
     irr::gui::IGUICheckBox* isSARTOn;
+    irr::gui::IGUICheckBox* turnPreview;
 
     irr::gui::IGUIComboBox* ownShipTypeSelector;
     irr::gui::IGUIComboBox* otherShipTypeSelector;
@@ -164,7 +171,7 @@ private:
     ScenarioData oldScenarioInfo; //Keep a copy of the data we have already displayed, so the dialog boxes only get updated when needed
 
     void drawInformationOnMap(const irr::f32& time, const irr::s32& mapOffsetX, const irr::s32& mapOffsetZ, const irr::f32& metresPerPx, const irr::f32& ownShipPosX, const irr::f32& ownShipPosZ, const irr::f32& ownShipHeading, const std::vector<PositionData>& buoys, const std::vector<PositionData>& landObjects, const std::vector<OtherShipData>& otherShips, const irr::s32& selectedShip, const irr::s32& selectedLeg);
-    void updateDropDowns(const std::vector<OtherShipData>& otherShips, irr::s32 selectedShip, irr::f32 time);
+    void updateDropDowns(const std::vector<OtherShipData>& otherShips, irr::s32 selectedShip, irr::s32 selectedLeg, irr::f32 time);
     bool manuallyTriggerGUIEvent(irr::gui::IGUIElement* caller, irr::gui::EGUI_EVENT_TYPE eType);
     std::wstring f32To3dp(irr::f32 value) const;
     std::wstring f32To4dp(irr::f32 value) const;

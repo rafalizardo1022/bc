@@ -244,8 +244,64 @@ int main (int argc, char ** argv)
     PositionData mobData;
     bool mobVisible;
 
+    WeatherJoystickSetup weatherJoystickSetup;
+    const irr::u32 unmappedJoystick = 0xFFFFFFFF;
+    const irr::u32 unmappedButton = 32;
+
+    auto readWeatherJoystickNo = [&](const std::string& key) {
+        return IniFile::iniFileTou32(iniFilename, key, unmappedJoystick);
+    };
+
+    auto readWeatherJoystickButton = [&](const std::string& key) {
+        irr::u32 button = IniFile::iniFileTou32(iniFilename, key, 0);
+        return button > 0 ? button - 1 : unmappedButton;
+    };
+
+    auto readWeatherJoystickStep = [&](const std::string& key, irr::s32 defaultValue) {
+        irr::s32 step = IniFile::iniFileTos32(iniFilename, key, defaultValue);
+        return step > 0 ? step : defaultValue;
+    };
+
+    bool hasWeatherJoystickMapping = false;
+    auto readWeatherJoystickPair = [&](irr::u32& joystickNo, irr::u32& button, const std::string& joystickKey, const std::string& buttonKey) {
+        joystickNo = readWeatherJoystickNo(joystickKey);
+        button = readWeatherJoystickButton(buttonKey);
+        if (joystickNo != unmappedJoystick && button < 32) {
+            hasWeatherJoystickMapping = true;
+        }
+    };
+
+    weatherJoystickSetup.enabled = IniFile::iniFileTou32(iniFilename, "joystick_weather_enabled", 0) > 0;
+    readWeatherJoystickPair(weatherJoystickSetup.joystickNoIncreaseWeather, weatherJoystickSetup.joystickButtonIncreaseWeather, "joystick_no_increase_weather", "joystick_button_increase_weather");
+    readWeatherJoystickPair(weatherJoystickSetup.joystickNoDecreaseWeather, weatherJoystickSetup.joystickButtonDecreaseWeather, "joystick_no_decrease_weather", "joystick_button_decrease_weather");
+    readWeatherJoystickPair(weatherJoystickSetup.joystickNoIncreaseRain, weatherJoystickSetup.joystickButtonIncreaseRain, "joystick_no_increase_rain", "joystick_button_increase_rain");
+    readWeatherJoystickPair(weatherJoystickSetup.joystickNoDecreaseRain, weatherJoystickSetup.joystickButtonDecreaseRain, "joystick_no_decrease_rain", "joystick_button_decrease_rain");
+    readWeatherJoystickPair(weatherJoystickSetup.joystickNoIncreaseVisibility, weatherJoystickSetup.joystickButtonIncreaseVisibility, "joystick_no_increase_visibility", "joystick_button_increase_visibility");
+    readWeatherJoystickPair(weatherJoystickSetup.joystickNoDecreaseVisibility, weatherJoystickSetup.joystickButtonDecreaseVisibility, "joystick_no_decrease_visibility", "joystick_button_decrease_visibility");
+    readWeatherJoystickPair(weatherJoystickSetup.joystickNoIncreaseWindDirection, weatherJoystickSetup.joystickButtonIncreaseWindDirection, "joystick_no_increase_wind_direction", "joystick_button_increase_wind_direction");
+    readWeatherJoystickPair(weatherJoystickSetup.joystickNoDecreaseWindDirection, weatherJoystickSetup.joystickButtonDecreaseWindDirection, "joystick_no_decrease_wind_direction", "joystick_button_decrease_wind_direction");
+    readWeatherJoystickPair(weatherJoystickSetup.joystickNoIncreaseWindSpeed, weatherJoystickSetup.joystickButtonIncreaseWindSpeed, "joystick_no_increase_wind_speed", "joystick_button_increase_wind_speed");
+    readWeatherJoystickPair(weatherJoystickSetup.joystickNoDecreaseWindSpeed, weatherJoystickSetup.joystickButtonDecreaseWindSpeed, "joystick_no_decrease_wind_speed", "joystick_button_decrease_wind_speed");
+    readWeatherJoystickPair(weatherJoystickSetup.joystickNoIncreaseStreamDirection, weatherJoystickSetup.joystickButtonIncreaseStreamDirection, "joystick_no_increase_stream_direction", "joystick_button_increase_stream_direction");
+    readWeatherJoystickPair(weatherJoystickSetup.joystickNoDecreaseStreamDirection, weatherJoystickSetup.joystickButtonDecreaseStreamDirection, "joystick_no_decrease_stream_direction", "joystick_button_decrease_stream_direction");
+    readWeatherJoystickPair(weatherJoystickSetup.joystickNoIncreaseStreamSpeed, weatherJoystickSetup.joystickButtonIncreaseStreamSpeed, "joystick_no_increase_stream_speed", "joystick_button_increase_stream_speed");
+    readWeatherJoystickPair(weatherJoystickSetup.joystickNoDecreaseStreamSpeed, weatherJoystickSetup.joystickButtonDecreaseStreamSpeed, "joystick_no_decrease_stream_speed", "joystick_button_decrease_stream_speed");
+    readWeatherJoystickPair(weatherJoystickSetup.joystickNoToggleStreamOverride, weatherJoystickSetup.joystickButtonToggleStreamOverride, "joystick_no_toggle_stream_override", "joystick_button_toggle_stream_override");
+
+    weatherJoystickSetup.weatherStep = readWeatherJoystickStep("joystick_weather_step_weather", weatherJoystickSetup.weatherStep);
+    weatherJoystickSetup.rainStep = readWeatherJoystickStep("joystick_weather_step_rain", weatherJoystickSetup.rainStep);
+    weatherJoystickSetup.visibilityStep = readWeatherJoystickStep("joystick_weather_step_visibility", weatherJoystickSetup.visibilityStep);
+    weatherJoystickSetup.windDirectionStep = readWeatherJoystickStep("joystick_weather_step_wind_direction", weatherJoystickSetup.windDirectionStep);
+    weatherJoystickSetup.windSpeedStep = readWeatherJoystickStep("joystick_weather_step_wind_speed", weatherJoystickSetup.windSpeedStep);
+    weatherJoystickSetup.streamDirectionStep = readWeatherJoystickStep("joystick_weather_step_stream_direction", weatherJoystickSetup.streamDirectionStep);
+    weatherJoystickSetup.streamSpeedStep = readWeatherJoystickStep("joystick_weather_step_stream_speed", weatherJoystickSetup.streamSpeedStep);
+
+    if (hasWeatherJoystickMapping) {
+        weatherJoystickSetup.enabled = true;
+    }
+
     //create event receiver, linked to model
-    EventReceiver receiver(device, &controller, &guiMain, &network);
+    EventReceiver receiver(device, &controller, &guiMain, &network, weatherJoystickSetup);
     device->setEventReceiver(&receiver);
 
     //Start listening for AIS data

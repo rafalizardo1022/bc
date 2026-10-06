@@ -54,6 +54,7 @@ add_subdirectory(iniEditor)
 add_subdirectory(launcher)
 add_subdirectory(multiplayerHub)
 add_subdirectory(repeater)
+add_subdirectory(instruments)
 
 set(CMAKE_THREAD_PREFER_PTHREAD ON)
 find_package(Threads REQUIRED)
@@ -78,6 +79,8 @@ set(BC_SOURCES
     GUIRectangle.cpp
     HeadingIndicator.cpp
     IniFile.cpp
+    InstrumentData.cpp
+    InstrumentNetworkCodec.cpp
     LandLights.cpp
     LandObject.cpp
     LandObjects.cpp

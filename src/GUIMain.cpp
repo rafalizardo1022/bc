@@ -94,6 +94,9 @@ void GUIMain::load(irr::IrrlichtDevice* device, Lang* language, std::vector<std:
 
         //Default to small radar display
         radarLarge = false;
+        instrumentDisplay = false;
+        instrumentDisplayPage = 0;
+        guiInstrumentDataInitialised = false;
         //Find available 4:3 rectangle to fit in area for large radar display
         irr::s32 availableWidth;
         irr::s32 availableHeight = (0.95-0.01)*sh;
@@ -816,16 +819,25 @@ void GUIMain::load(irr::IrrlichtDevice* device, Lang* language, std::vector<std:
     void GUIMain::toggleShow2dInterface()
     {
         if (!getLargeRadar()) {
-            if (!showInterface) {
-                if (guienv->getRootGUIElement()->isVisible()) {
-                    guienv->getRootGUIElement()->setVisible(false);
+            if (instrumentDisplay) {
+                if (instrumentDisplayPage < 3) {
+                    instrumentDisplayPage++;
                 } else {
+                    instrumentDisplay = false;
+                    instrumentDisplayPage = 0;
                     showInterface = true;
                     guienv->getRootGUIElement()->setVisible(true);
                 }
-
-            } else {
+            } else if (showInterface) {
                 showInterface = false;
+                guienv->getRootGUIElement()->setVisible(true);
+            } else if (guienv->getRootGUIElement()->isVisible()) {
+                guienv->getRootGUIElement()->setVisible(false);
+            } else {
+                instrumentDisplay = true;
+                instrumentDisplayPage = 1;
+                showInterface = false;
+                guienv->getRootGUIElement()->setVisible(false);
             }
             updateVisibility();
         }
@@ -833,18 +845,31 @@ void GUIMain::load(irr::IrrlichtDevice* device, Lang* language, std::vector<std:
 
     void GUIMain::show2dInterface()
     {
+        instrumentDisplay = false;
+        instrumentDisplayPage = 0;
         showInterface = true;
+        guienv->getRootGUIElement()->setVisible(true);
         updateVisibility();
     }
 
     void GUIMain::hide2dInterface()
     {
+        instrumentDisplay = false;
+        instrumentDisplayPage = 0;
         showInterface = false;
         updateVisibility();
     }
 
+    bool GUIMain::getInstrumentDisplay() const
+    {
+        return instrumentDisplay;
+    }
+
     bool GUIMain::getShow3d() const
     {
+        if (instrumentDisplay) {
+            return false;
+        }
         return show3d->isChecked();
     }
 
@@ -875,6 +900,11 @@ void GUIMain::load(irr::IrrlichtDevice* device, Lang* language, std::vector<std:
 
     void GUIMain::setLargeRadar(bool radarState)
     {
+        if (radarState) {
+            instrumentDisplay = false;
+            instrumentDisplayPage = 0;
+            guienv->getRootGUIElement()->setVisible(true);
+        }
         radarLarge = radarState;
         updateVisibility();
     }
@@ -960,7 +990,12 @@ void GUIMain::load(irr::IrrlichtDevice* device, Lang* language, std::vector<std:
     }
 
     void GUIMain::updateVisibility()
-    {   
+    {
+        if (instrumentDisplay) {
+            guienv->getRootGUIElement()->setVisible(false);
+            return;
+        }
+
         //Items to show if we're showing interface
         radarTabControl->setVisible(showInterface);
         radarText->setVisible(showInterface);
@@ -1250,6 +1285,7 @@ void GUIMain::load(irr::IrrlichtDevice* device, Lang* language, std::vector<std:
         guiCollided = guiData->collided;
 // DEE Feb 23 vvvv height of tide
 guiTideHeight = guiData->tideHeight;
+        smoothInstrumentData(guiData->instrumentData);
 
 
         radarHeadUp = guiData->headUp;
@@ -1313,6 +1349,19 @@ guiTideHeight = guiData->tideHeight;
                 pausedButton->remove();
                 pausedButton = 0;
             }
+        }
+
+        if (instrumentDisplay) {
+            if (instrumentDisplayPage == 1) {
+                drawNavigationInstrumentDisplay();
+            } else if (instrumentDisplayPage == 2) {
+                drawPropulsionInstrumentDisplay();
+            } else if (instrumentDisplayPage == 3) {
+                drawWeatherInstrumentDisplay();
+            } else {
+                drawFullInstrumentDisplay();
+            }
+            return;
         }
 
         //Convert lat/long into a readable format
@@ -1884,6 +1933,748 @@ guiTideHeight = guiData->tideHeight;
         guienv->getSkin()->getFont()->draw(language->translate("collided"),
             irr::core::rect<irr::s32>(screenCentreX-0.25*su,screenCentreY-0.025*sh,screenCentreX+0.25*su, screenCentreY+0.025*sh),
 			irr::video::SColor(255,255,0,0),true,true);
+    }
+
+    void GUIMain::drawFullInstrumentDisplay()
+    {
+        irr::video::IVideoDriver* driver = device->getVideoDriver();
+        irr::video::SColor background(255, 5, 14, 18);
+        irr::video::SColor header(255, 9, 23, 29);
+        irr::video::SColor text(255, 222, 239, 238);
+        irr::video::SColor muted(255, 136, 160, 165);
+        irr::video::SColor accent(255, 81, 213, 197);
+        irr::video::SColor warning(255, 230, 182, 80);
+        irr::video::SColor danger(255, 226, 88, 83);
+
+        driver->draw2DRectangle(background, irr::core::rect<irr::s32>(0, 0, su, sh));
+        driver->draw2DRectangle(header, irr::core::rect<irr::s32>(0, 0, su, 56));
+        drawInstrumentText("SHIP INFORMATION", irr::core::rect<irr::s32>(18, 8, su / 2, 36), text, false, true);
+        drawInstrumentText(guiInstrumentData.valid ? "LIVE" : "NO DATA", irr::core::rect<irr::s32>(su - 148, 8, su - 18, 36), guiInstrumentData.valid ? accent : warning, true, true);
+        drawInstrumentText(guiTime, irr::core::rect<irr::s32>(18, 32, su / 2, 54), muted, false, true);
+        if (guiPaused) {
+            drawInstrumentText("PAUSED", irr::core::rect<irr::s32>(su - 290, 8, su - 160, 36), warning, true, true);
+        }
+
+        irr::s32 margin = 14;
+        irr::s32 gap = 12;
+        irr::s32 top = 56 + margin;
+        irr::s32 usableWidth = su - 2 * margin - 2 * gap;
+        irr::s32 columnWidth = usableWidth / 3;
+        irr::s32 rowHeight = (sh - top - margin - gap) / 2;
+
+        irr::core::rect<irr::s32> navigation(margin, top, margin + columnWidth, top + rowHeight);
+        irr::core::rect<irr::s32> propulsion(margin + columnWidth + gap, top, margin + 2 * columnWidth + gap, top + rowHeight);
+        irr::core::rect<irr::s32> steering(margin + 2 * columnWidth + 2 * gap, top, su - margin, top + rowHeight);
+        irr::core::rect<irr::s32> motion(margin, top + rowHeight + gap, margin + columnWidth, sh - margin);
+        irr::core::rect<irr::s32> environment(margin + columnWidth + gap, top + rowHeight + gap, margin + 2 * columnWidth + gap, sh - margin);
+        irr::core::rect<irr::s32> systems(margin + 2 * columnWidth + 2 * gap, top + rowHeight + gap, su - margin, sh - margin);
+
+        irr::s32 pad = 16;
+        irr::s32 half;
+
+        drawInstrumentPanel(navigation, "NAVIGATION");
+        irr::core::rect<irr::s32> n(navigation.UpperLeftCorner.X + pad, navigation.UpperLeftCorner.Y + 38, navigation.LowerRightCorner.X - pad, navigation.LowerRightCorner.Y - pad);
+        half = n.getWidth() / 2;
+        drawInstrumentGyroGraphic(irr::core::rect<irr::s32>(n.UpperLeftCorner.X, n.UpperLeftCorner.Y, n.LowerRightCorner.X, n.UpperLeftCorner.Y + 166));
+        drawInstrumentValue(irr::core::rect<irr::s32>(n.UpperLeftCorner.X, n.UpperLeftCorner.Y + 174, n.UpperLeftCorner.X + half - 6, n.UpperLeftCorner.Y + 228), "SOG", formatInstrumentFloat(guiInstrumentData.sogKts, 1), "kt", text);
+        drawInstrumentValue(irr::core::rect<irr::s32>(n.UpperLeftCorner.X + half + 6, n.UpperLeftCorner.Y + 174, n.LowerRightCorner.X, n.UpperLeftCorner.Y + 228), "STW", formatInstrumentFloat(guiInstrumentData.speedThroughWaterKts, 1), "kt", accent);
+        drawInstrumentValue(irr::core::rect<irr::s32>(n.UpperLeftCorner.X, n.UpperLeftCorner.Y + 236, n.UpperLeftCorner.X + half - 6, n.LowerRightCorner.Y), "DEPTH", formatInstrumentFloat(guiInstrumentData.depthM, 1), "m", guiInstrumentData.hasDepthSounder ? text : muted);
+        drawInstrumentValue(irr::core::rect<irr::s32>(n.UpperLeftCorner.X + half + 6, n.UpperLeftCorner.Y + 236, n.LowerRightCorner.X, n.LowerRightCorner.Y), "DBK", formatInstrumentFloat(guiInstrumentData.depthBelowKeelM, 1), "m", guiInstrumentData.depthBelowKeelM < 2 ? warning : text);
+
+        drawInstrumentPanel(propulsion, "PROPULSION");
+        irr::core::rect<irr::s32> p(propulsion.UpperLeftCorner.X + pad, propulsion.UpperLeftCorner.Y + 38, propulsion.LowerRightCorner.X - pad, propulsion.LowerRightCorner.Y - pad);
+        half = p.getWidth() / 2;
+        drawInstrumentValue(irr::core::rect<irr::s32>(p.UpperLeftCorner.X, p.UpperLeftCorner.Y, p.UpperLeftCorner.X + half - 6, p.UpperLeftCorner.Y + 72), guiInstrumentData.isSingleEngine ? "ENGINE RPM" : "PORT RPM", formatInstrumentFloat(guiInstrumentData.portEngineRpm, 0), "rpm", accent);
+        drawInstrumentValue(irr::core::rect<irr::s32>(p.UpperLeftCorner.X + half + 6, p.UpperLeftCorner.Y, p.LowerRightCorner.X, p.UpperLeftCorner.Y + 72), "STBD RPM", formatInstrumentFloat(guiInstrumentData.stbdEngineRpm, 0), "rpm", guiInstrumentData.isSingleEngine ? muted : accent);
+        irr::s32 lane = p.getWidth() / 2;
+        irr::s32 barTop = p.UpperLeftCorner.Y + 104;
+        irr::s32 barBottom = p.LowerRightCorner.Y - 96;
+        drawInstrumentText("PORT COMMAND", irr::core::rect<irr::s32>(p.UpperLeftCorner.X, p.UpperLeftCorner.Y + 82, p.UpperLeftCorner.X + lane, p.UpperLeftCorner.Y + 104), muted, true, true);
+        drawInstrumentVerticalBar(irr::core::rect<irr::s32>(p.UpperLeftCorner.X + lane / 2 - 14, barTop, p.UpperLeftCorner.X + lane / 2 + 14, barBottom), guiInstrumentData.portEngineCommand, -1, 1, guiInstrumentData.portEngineCommand >= 0 ? accent : danger);
+        drawInstrumentText(formatInstrumentPercent(guiInstrumentData.portEngineCommand), irr::core::rect<irr::s32>(p.UpperLeftCorner.X, barBottom + 4, p.UpperLeftCorner.X + lane, barBottom + 28), text, true, true);
+        drawInstrumentText(guiInstrumentData.isSingleEngine ? "ENGINE COMMAND" : "STBD COMMAND", irr::core::rect<irr::s32>(p.UpperLeftCorner.X + lane, p.UpperLeftCorner.Y + 82, p.LowerRightCorner.X, p.UpperLeftCorner.Y + 104), muted, true, true);
+        drawInstrumentVerticalBar(irr::core::rect<irr::s32>(p.UpperLeftCorner.X + lane + lane / 2 - 14, barTop, p.UpperLeftCorner.X + lane + lane / 2 + 14, barBottom), guiInstrumentData.stbdEngineCommand, -1, 1, guiInstrumentData.isSingleEngine ? muted : (guiInstrumentData.stbdEngineCommand >= 0 ? accent : danger));
+        drawInstrumentText(formatInstrumentPercent(guiInstrumentData.stbdEngineCommand), irr::core::rect<irr::s32>(p.UpperLeftCorner.X + lane, barBottom + 4, p.LowerRightCorner.X, barBottom + 28), guiInstrumentData.isSingleEngine ? muted : text, true, true);
+        irr::s32 thrusterLeft = p.UpperLeftCorner.X + p.getWidth() / 6;
+        irr::s32 thrusterRight = p.LowerRightCorner.X - p.getWidth() / 6;
+        drawInstrumentText("BOW THRUSTER", irr::core::rect<irr::s32>(p.UpperLeftCorner.X, p.LowerRightCorner.Y - 80, p.LowerRightCorner.X, p.LowerRightCorner.Y - 62), muted);
+        drawInstrumentBar(irr::core::rect<irr::s32>(thrusterLeft, p.LowerRightCorner.Y - 58, thrusterRight, p.LowerRightCorner.Y - 42), guiInstrumentData.bowThruster, -1, 1, guiInstrumentData.bowThruster >= 0 ? accent : danger);
+        drawInstrumentText("STERN THRUSTER", irr::core::rect<irr::s32>(p.UpperLeftCorner.X, p.LowerRightCorner.Y - 36, p.LowerRightCorner.X, p.LowerRightCorner.Y - 18), muted);
+        drawInstrumentBar(irr::core::rect<irr::s32>(thrusterLeft, p.LowerRightCorner.Y - 14, thrusterRight, p.LowerRightCorner.Y), guiInstrumentData.sternThruster, -1, 1, guiInstrumentData.sternThruster >= 0 ? accent : danger);
+
+        drawInstrumentPanel(steering, "STEERING");
+        irr::core::rect<irr::s32> st(steering.UpperLeftCorner.X + pad, steering.UpperLeftCorner.Y + 38, steering.LowerRightCorner.X - pad, steering.LowerRightCorner.Y - pad);
+        half = st.getWidth() / 2;
+        drawInstrumentRateOfTurnGraphic(irr::core::rect<irr::s32>(st.UpperLeftCorner.X, st.UpperLeftCorner.Y, st.LowerRightCorner.X, st.UpperLeftCorner.Y + 132));
+        drawInstrumentValue(irr::core::rect<irr::s32>(st.UpperLeftCorner.X, st.UpperLeftCorner.Y + 142, st.UpperLeftCorner.X + half - 6, st.UpperLeftCorner.Y + 204), "RUDDER", formatInstrumentPortStarboard(guiInstrumentData.rudderDeg, 1), "deg", accent);
+        drawInstrumentValue(irr::core::rect<irr::s32>(st.UpperLeftCorner.X + half + 6, st.UpperLeftCorner.Y + 142, st.LowerRightCorner.X, st.UpperLeftCorner.Y + 204), "WHEEL", formatInstrumentPortStarboard(guiInstrumentData.wheelDeg, 1), "deg", warning);
+        drawInstrumentText("RUDDER ACTUAL", irr::core::rect<irr::s32>(st.UpperLeftCorner.X, st.UpperLeftCorner.Y + 214, st.LowerRightCorner.X, st.UpperLeftCorner.Y + 236), muted);
+        drawInstrumentBar(irr::core::rect<irr::s32>(st.UpperLeftCorner.X, st.UpperLeftCorner.Y + 240, st.LowerRightCorner.X, st.UpperLeftCorner.Y + 266), guiInstrumentData.rudderDeg, -30, 30, accent);
+        drawInstrumentText(guiInstrumentData.emergencySteering ? "EMERGENCY" : "FOLLOW-UP", irr::core::rect<irr::s32>(st.UpperLeftCorner.X, st.LowerRightCorner.Y - 24, st.LowerRightCorner.X, st.LowerRightCorner.Y), guiInstrumentData.emergencySteering ? danger : accent, true, true);
+
+        drawInstrumentPanel(motion, "MOTION / HULL");
+        irr::core::rect<irr::s32> m(motion.UpperLeftCorner.X + pad, motion.UpperLeftCorner.Y + 38, motion.LowerRightCorner.X - pad, motion.LowerRightCorner.Y - pad);
+        half = m.getWidth() / 2;
+        drawInstrumentValue(irr::core::rect<irr::s32>(m.UpperLeftCorner.X, m.UpperLeftCorner.Y, m.UpperLeftCorner.X + half - 6, m.UpperLeftCorner.Y + 72), "LAT", formatInstrumentFloat(guiInstrumentData.latitudeDeg, 4), "deg", muted);
+        drawInstrumentValue(irr::core::rect<irr::s32>(m.UpperLeftCorner.X + half + 6, m.UpperLeftCorner.Y, m.LowerRightCorner.X, m.UpperLeftCorner.Y + 72), "TIDE", formatInstrumentSignedFloat(guiInstrumentData.tideHeightM, 2), "m", muted);
+        drawInstrumentValue(irr::core::rect<irr::s32>(m.UpperLeftCorner.X, m.UpperLeftCorner.Y + 88, m.UpperLeftCorner.X + half - 6, m.UpperLeftCorner.Y + 160), "ROLL", formatInstrumentSignedFloat(guiInstrumentData.rollDeg, 1), "deg", text);
+        drawInstrumentValue(irr::core::rect<irr::s32>(m.UpperLeftCorner.X + half + 6, m.UpperLeftCorner.Y + 88, m.LowerRightCorner.X, m.UpperLeftCorner.Y + 160), "PITCH", formatInstrumentSignedFloat(guiInstrumentData.pitchDeg, 1), "deg", text);
+        drawInstrumentValue(irr::core::rect<irr::s32>(m.UpperLeftCorner.X, m.UpperLeftCorner.Y + 176, m.UpperLeftCorner.X + half - 6, m.UpperLeftCorner.Y + 248), "LONG", formatInstrumentFloat(guiInstrumentData.longitudeDeg, 4), "deg", muted);
+        drawInstrumentValue(irr::core::rect<irr::s32>(m.UpperLeftCorner.X + half + 6, m.UpperLeftCorner.Y + 176, m.LowerRightCorner.X, m.UpperLeftCorner.Y + 248), "RAIN", formatInstrumentFloat(guiInstrumentData.rain, 1), "/10", text);
+
+        drawInstrumentPanel(environment, "ENVIRONMENT");
+        irr::core::rect<irr::s32> e(environment.UpperLeftCorner.X + pad, environment.UpperLeftCorner.Y + 38, environment.LowerRightCorner.X - pad, environment.LowerRightCorner.Y - pad);
+        half = e.getWidth() / 2;
+        drawInstrumentWindCurrentGraphic(irr::core::rect<irr::s32>(e.UpperLeftCorner.X, e.UpperLeftCorner.Y, e.LowerRightCorner.X, e.UpperLeftCorner.Y + 146));
+        drawInstrumentValue(irr::core::rect<irr::s32>(e.UpperLeftCorner.X, e.UpperLeftCorner.Y + 154, e.UpperLeftCorner.X + half - 6, e.UpperLeftCorner.Y + 214), "APP WIND", formatInstrumentFloat(guiInstrumentData.apparentWindRelativeDeg, 0), "deg rel", warning);
+        drawInstrumentValue(irr::core::rect<irr::s32>(e.UpperLeftCorner.X, e.UpperLeftCorner.Y + 218, e.UpperLeftCorner.X + half - 6, e.LowerRightCorner.Y), "WIND SPD", formatInstrumentFloat(guiInstrumentData.windSpeedKts, 1), "kt", warning);
+        drawInstrumentValue(irr::core::rect<irr::s32>(e.UpperLeftCorner.X + half + 6, e.UpperLeftCorner.Y + 154, e.LowerRightCorner.X, e.UpperLeftCorner.Y + 214), "TIDAL SET", formatInstrumentFloat(guiInstrumentData.currentDirectionDeg, 0), "deg", text);
+        drawInstrumentValue(irr::core::rect<irr::s32>(e.UpperLeftCorner.X + half + 6, e.UpperLeftCorner.Y + 218, e.LowerRightCorner.X, e.LowerRightCorner.Y), "TIDAL DRIFT", formatInstrumentFloat(guiInstrumentData.currentSpeedKts, 2), "kt", accent);
+
+        drawInstrumentPanel(systems, "VESSEL GRAPHIC");
+        irr::core::rect<irr::s32> sy(systems.UpperLeftCorner.X + pad, systems.UpperLeftCorner.Y + 38, systems.LowerRightCorner.X - pad, systems.LowerRightCorner.Y - pad);
+        half = sy.getWidth() / 2;
+        drawInstrumentVesselMotionGraphic(irr::core::rect<irr::s32>(sy.UpperLeftCorner.X, sy.UpperLeftCorner.Y, sy.LowerRightCorner.X, sy.UpperLeftCorner.Y + 202));
+        drawInstrumentValue(irr::core::rect<irr::s32>(sy.UpperLeftCorner.X, sy.UpperLeftCorner.Y + 208, sy.UpperLeftCorner.X + half - 6, sy.LowerRightCorner.Y), "VISIBILITY", formatInstrumentFloat(guiInstrumentData.visibilityNm, 1), "nm", text);
+        drawInstrumentValue(irr::core::rect<irr::s32>(sy.UpperLeftCorner.X + half + 6, sy.UpperLeftCorner.Y + 208, sy.LowerRightCorner.X, sy.LowerRightCorner.Y), "WEATHER", formatInstrumentFloat(guiInstrumentData.weather, 1), "/12", muted);
+
+        if (guiCollided && showCollided) {
+            drawCollisionWarning();
+        }
+    }
+
+    void GUIMain::drawInstrumentPageBackground(const std::string& title, const std::string& pageLabel, irr::video::SColor text, irr::video::SColor muted, irr::video::SColor accent, irr::video::SColor warning)
+    {
+        irr::video::IVideoDriver* driver = device->getVideoDriver();
+        irr::video::SColor background(255, 5, 14, 18);
+        irr::video::SColor header(255, 9, 23, 29);
+        driver->draw2DRectangle(background, irr::core::rect<irr::s32>(0, 0, su, sh));
+        driver->draw2DRectangle(header, irr::core::rect<irr::s32>(0, 0, su, 56));
+        drawInstrumentText(title, irr::core::rect<irr::s32>(18, 8, su / 2, 36), text, false, true);
+        drawInstrumentText(pageLabel, irr::core::rect<irr::s32>(su / 2, 8, su - 160, 36), accent, true, true);
+        drawInstrumentText(guiInstrumentData.valid ? "LIVE" : "NO DATA", irr::core::rect<irr::s32>(su - 148, 8, su - 18, 36), guiInstrumentData.valid ? accent : warning, true, true);
+        drawInstrumentText(guiTime, irr::core::rect<irr::s32>(18, 32, su / 2, 54), muted, false, true);
+        if (guiPaused) {
+            drawInstrumentText("PAUSED", irr::core::rect<irr::s32>(su - 290, 8, su - 160, 36), warning, true, true);
+        }
+    }
+
+    void GUIMain::drawNavigationInstrumentDisplay()
+    {
+        irr::video::SColor text(255, 222, 239, 238);
+        irr::video::SColor muted(255, 136, 160, 165);
+        irr::video::SColor accent(255, 81, 213, 197);
+        irr::video::SColor warning(255, 230, 182, 80);
+
+        drawInstrumentPageBackground("NAVIGATION", "PAGE 1 / 3", text, muted, accent, warning);
+
+        irr::s32 margin = 14;
+        irr::s32 gap = 12;
+        irr::s32 top = 70;
+        irr::s32 leftWidth = (su - 2 * margin - gap) * 58 / 100;
+        irr::s32 rightLeft = margin + leftWidth + gap;
+
+        irr::core::rect<irr::s32> gyro(margin, top, margin + leftWidth, sh - margin);
+        irr::core::rect<irr::s32> speeds(rightLeft, top, su - margin, top + (sh - top - margin - gap) / 2);
+        irr::core::rect<irr::s32> position(rightLeft, speeds.LowerRightCorner.Y + gap, su - margin, sh - margin);
+        drawInstrumentPanel(gyro, "GYRO / COURSE");
+        drawInstrumentPanel(speeds, "SPEED / DEPTH");
+        drawInstrumentPanel(position, "POSITION");
+
+        irr::s32 pad = 18;
+        drawInstrumentGyroGraphic(irr::core::rect<irr::s32>(gyro.UpperLeftCorner.X + pad, gyro.UpperLeftCorner.Y + 38, gyro.LowerRightCorner.X - pad, gyro.LowerRightCorner.Y - pad));
+
+        irr::core::rect<irr::s32> s(speeds.UpperLeftCorner.X + pad, speeds.UpperLeftCorner.Y + 42, speeds.LowerRightCorner.X - pad, speeds.LowerRightCorner.Y - pad);
+        irr::s32 half = s.getWidth() / 2;
+        drawInstrumentValue(irr::core::rect<irr::s32>(s.UpperLeftCorner.X, s.UpperLeftCorner.Y, s.UpperLeftCorner.X + half - 8, s.UpperLeftCorner.Y + 86), "SOG", formatInstrumentFloat(guiInstrumentData.sogKts, 1), "kt", text);
+        drawInstrumentValue(irr::core::rect<irr::s32>(s.UpperLeftCorner.X + half + 8, s.UpperLeftCorner.Y, s.LowerRightCorner.X, s.UpperLeftCorner.Y + 86), "STW", formatInstrumentFloat(guiInstrumentData.speedThroughWaterKts, 1), "kt", accent);
+        drawInstrumentValue(irr::core::rect<irr::s32>(s.UpperLeftCorner.X, s.UpperLeftCorner.Y + 104, s.UpperLeftCorner.X + half - 8, s.LowerRightCorner.Y), "DEPTH", formatInstrumentFloat(guiInstrumentData.depthM, 1), "m", guiInstrumentData.hasDepthSounder ? text : muted);
+        drawInstrumentValue(irr::core::rect<irr::s32>(s.UpperLeftCorner.X + half + 8, s.UpperLeftCorner.Y + 104, s.LowerRightCorner.X, s.LowerRightCorner.Y), "DBK", formatInstrumentFloat(guiInstrumentData.depthBelowKeelM, 1), "m", guiInstrumentData.depthBelowKeelM < 2 ? warning : text);
+
+        irr::core::rect<irr::s32> p(position.UpperLeftCorner.X + pad, position.UpperLeftCorner.Y + 42, position.LowerRightCorner.X - pad, position.LowerRightCorner.Y - pad);
+        half = p.getWidth() / 2;
+        drawInstrumentValue(irr::core::rect<irr::s32>(p.UpperLeftCorner.X, p.UpperLeftCorner.Y, p.UpperLeftCorner.X + half - 8, p.UpperLeftCorner.Y + 86), "LAT", formatInstrumentFloat(guiInstrumentData.latitudeDeg, 4), "deg", text);
+        drawInstrumentValue(irr::core::rect<irr::s32>(p.UpperLeftCorner.X + half + 8, p.UpperLeftCorner.Y, p.LowerRightCorner.X, p.UpperLeftCorner.Y + 86), "LONG", formatInstrumentFloat(guiInstrumentData.longitudeDeg, 4), "deg", text);
+        drawInstrumentValue(irr::core::rect<irr::s32>(p.UpperLeftCorner.X, p.UpperLeftCorner.Y + 104, p.UpperLeftCorner.X + half - 8, p.LowerRightCorner.Y), "HDG", formatInstrumentFloat(guiInstrumentData.headingDeg, 0), "deg", accent);
+        drawInstrumentValue(irr::core::rect<irr::s32>(p.UpperLeftCorner.X + half + 8, p.UpperLeftCorner.Y + 104, p.LowerRightCorner.X, p.LowerRightCorner.Y), "COG", formatInstrumentFloat(guiInstrumentData.cogDeg, 0), "deg", warning);
+
+        if (guiCollided && showCollided) {
+            drawCollisionWarning();
+        }
+    }
+
+    void GUIMain::drawPropulsionInstrumentDisplay()
+    {
+        irr::video::SColor text(255, 222, 239, 238);
+        irr::video::SColor muted(255, 136, 160, 165);
+        irr::video::SColor accent(255, 81, 213, 197);
+        irr::video::SColor warning(255, 230, 182, 80);
+        irr::video::SColor danger(255, 226, 88, 83);
+
+        drawInstrumentPageBackground("PROPULSION", "PAGE 2 / 3", text, muted, accent, warning);
+
+        irr::s32 margin = 14;
+        irr::s32 gap = 12;
+        irr::s32 top = 70;
+        irr::s32 usableWidth = su - 2 * margin - 2 * gap;
+        irr::s32 columnWidth = usableWidth / 3;
+
+        irr::core::rect<irr::s32> engines(margin, top, margin + columnWidth, sh - margin);
+        irr::core::rect<irr::s32> vessel(margin + columnWidth + gap, top, margin + 2 * columnWidth + gap, sh - margin);
+        irr::core::rect<irr::s32> steering(margin + 2 * columnWidth + 2 * gap, top, su - margin, sh - margin);
+        drawInstrumentPanel(engines, "ENGINES");
+        drawInstrumentPanel(vessel, "VESSEL MOTION");
+        drawInstrumentPanel(steering, "STEERING");
+
+        irr::s32 pad = 18;
+        irr::core::rect<irr::s32> e(engines.UpperLeftCorner.X + pad, engines.UpperLeftCorner.Y + 42, engines.LowerRightCorner.X - pad, engines.LowerRightCorner.Y - pad);
+        irr::s32 half = e.getWidth() / 2;
+        drawInstrumentValue(irr::core::rect<irr::s32>(e.UpperLeftCorner.X, e.UpperLeftCorner.Y, e.UpperLeftCorner.X + half - 8, e.UpperLeftCorner.Y + 86), guiInstrumentData.isSingleEngine ? "ENGINE RPM" : "PORT RPM", formatInstrumentFloat(guiInstrumentData.portEngineRpm, 0), "rpm", accent);
+        drawInstrumentValue(irr::core::rect<irr::s32>(e.UpperLeftCorner.X + half + 8, e.UpperLeftCorner.Y, e.LowerRightCorner.X, e.UpperLeftCorner.Y + 86), "STBD RPM", formatInstrumentFloat(guiInstrumentData.stbdEngineRpm, 0), "rpm", guiInstrumentData.isSingleEngine ? muted : accent);
+        drawInstrumentText("PORT COMMAND", irr::core::rect<irr::s32>(e.UpperLeftCorner.X, e.UpperLeftCorner.Y + 106, e.UpperLeftCorner.X + half - 8, e.UpperLeftCorner.Y + 130), muted, true, true);
+        drawInstrumentVerticalBar(irr::core::rect<irr::s32>(e.UpperLeftCorner.X + half / 2 - 18, e.UpperLeftCorner.Y + 138, e.UpperLeftCorner.X + half / 2 + 18, e.LowerRightCorner.Y - 62), guiInstrumentData.portEngineCommand, -1, 1, guiInstrumentData.portEngineCommand >= 0 ? accent : danger);
+        drawInstrumentText(guiInstrumentData.isSingleEngine ? "ENGINE COMMAND" : "STBD COMMAND", irr::core::rect<irr::s32>(e.UpperLeftCorner.X + half + 8, e.UpperLeftCorner.Y + 106, e.LowerRightCorner.X, e.UpperLeftCorner.Y + 130), muted, true, true);
+        drawInstrumentVerticalBar(irr::core::rect<irr::s32>(e.UpperLeftCorner.X + half + half / 2 - 18, e.UpperLeftCorner.Y + 138, e.UpperLeftCorner.X + half + half / 2 + 18, e.LowerRightCorner.Y - 62), guiInstrumentData.stbdEngineCommand, -1, 1, guiInstrumentData.isSingleEngine ? muted : (guiInstrumentData.stbdEngineCommand >= 0 ? accent : danger));
+        drawInstrumentText("ENGINE TEMP", irr::core::rect<irr::s32>(e.UpperLeftCorner.X, e.LowerRightCorner.Y - 44, e.LowerRightCorner.X, e.LowerRightCorner.Y - 20), muted, true, true);
+        drawInstrumentText("READY FOR INSTRUCTOR OVERRIDE", irr::core::rect<irr::s32>(e.UpperLeftCorner.X, e.LowerRightCorner.Y - 22, e.LowerRightCorner.X, e.LowerRightCorner.Y), warning, true, true);
+
+        drawInstrumentVesselMotionGraphic(irr::core::rect<irr::s32>(vessel.UpperLeftCorner.X + pad, vessel.UpperLeftCorner.Y + 42, vessel.LowerRightCorner.X - pad, vessel.LowerRightCorner.Y - 120));
+        irr::core::rect<irr::s32> v(vessel.UpperLeftCorner.X + pad, vessel.LowerRightCorner.Y - 100, vessel.LowerRightCorner.X - pad, vessel.LowerRightCorner.Y - pad);
+        drawInstrumentText("BOW THRUSTER", irr::core::rect<irr::s32>(v.UpperLeftCorner.X, v.UpperLeftCorner.Y, v.LowerRightCorner.X, v.UpperLeftCorner.Y + 22), muted);
+        drawInstrumentBar(irr::core::rect<irr::s32>(v.UpperLeftCorner.X, v.UpperLeftCorner.Y + 26, v.LowerRightCorner.X, v.UpperLeftCorner.Y + 44), guiInstrumentData.bowThruster, -1, 1, guiInstrumentData.bowThruster >= 0 ? accent : danger);
+        drawInstrumentText("STERN THRUSTER", irr::core::rect<irr::s32>(v.UpperLeftCorner.X, v.UpperLeftCorner.Y + 54, v.LowerRightCorner.X, v.UpperLeftCorner.Y + 76), muted);
+        drawInstrumentBar(irr::core::rect<irr::s32>(v.UpperLeftCorner.X, v.UpperLeftCorner.Y + 80, v.LowerRightCorner.X, v.UpperLeftCorner.Y + 98), guiInstrumentData.sternThruster, -1, 1, guiInstrumentData.sternThruster >= 0 ? accent : danger);
+
+        irr::core::rect<irr::s32> st(steering.UpperLeftCorner.X + pad, steering.UpperLeftCorner.Y + 42, steering.LowerRightCorner.X - pad, steering.LowerRightCorner.Y - pad);
+        drawInstrumentRateOfTurnGraphic(irr::core::rect<irr::s32>(st.UpperLeftCorner.X, st.UpperLeftCorner.Y, st.LowerRightCorner.X, st.UpperLeftCorner.Y + 168));
+        half = st.getWidth() / 2;
+        drawInstrumentValue(irr::core::rect<irr::s32>(st.UpperLeftCorner.X, st.UpperLeftCorner.Y + 182, st.UpperLeftCorner.X + half - 8, st.UpperLeftCorner.Y + 260), "RUDDER", formatInstrumentPortStarboard(guiInstrumentData.rudderDeg, 1), "deg", accent);
+        drawInstrumentValue(irr::core::rect<irr::s32>(st.UpperLeftCorner.X + half + 8, st.UpperLeftCorner.Y + 182, st.LowerRightCorner.X, st.UpperLeftCorner.Y + 260), "WHEEL", formatInstrumentPortStarboard(guiInstrumentData.wheelDeg, 1), "deg", warning);
+        drawInstrumentText("RUDDER ACTUAL", irr::core::rect<irr::s32>(st.UpperLeftCorner.X, st.UpperLeftCorner.Y + 282, st.LowerRightCorner.X, st.UpperLeftCorner.Y + 306), muted);
+        drawInstrumentBar(irr::core::rect<irr::s32>(st.UpperLeftCorner.X, st.UpperLeftCorner.Y + 312, st.LowerRightCorner.X, st.UpperLeftCorner.Y + 338), guiInstrumentData.rudderDeg, -30, 30, accent);
+        drawInstrumentText(guiInstrumentData.emergencySteering ? "EMERGENCY STEERING" : "FOLLOW-UP STEERING", irr::core::rect<irr::s32>(st.UpperLeftCorner.X, st.LowerRightCorner.Y - 30, st.LowerRightCorner.X, st.LowerRightCorner.Y), guiInstrumentData.emergencySteering ? danger : accent, true, true);
+
+        if (guiCollided && showCollided) {
+            drawCollisionWarning();
+        }
+    }
+
+    void GUIMain::drawWeatherInstrumentDisplay()
+    {
+        irr::video::SColor text(255, 222, 239, 238);
+        irr::video::SColor muted(255, 136, 160, 165);
+        irr::video::SColor accent(255, 81, 213, 197);
+        irr::video::SColor warning(255, 230, 182, 80);
+
+        drawInstrumentPageBackground("WEATHER", "PAGE 3 / 3", text, muted, accent, warning);
+
+        irr::s32 margin = 14;
+        irr::s32 gap = 12;
+        irr::s32 top = 70;
+        irr::s32 leftWidth = (su - 2 * margin - gap) * 58 / 100;
+        irr::s32 rightLeft = margin + leftWidth + gap;
+
+        irr::core::rect<irr::s32> graphic(margin, top, margin + leftWidth, sh - margin);
+        irr::core::rect<irr::s32> wind(rightLeft, top, su - margin, top + (sh - top - margin - gap) / 2);
+        irr::core::rect<irr::s32> conditions(rightLeft, wind.LowerRightCorner.Y + gap, su - margin, sh - margin);
+        drawInstrumentPanel(graphic, "WIND / CURRENT GRAPHIC");
+        drawInstrumentPanel(wind, "WIND / TIDAL STREAM");
+        drawInstrumentPanel(conditions, "CONDITIONS");
+
+        irr::s32 pad = 18;
+        drawInstrumentWindCurrentGraphic(irr::core::rect<irr::s32>(graphic.UpperLeftCorner.X + pad, graphic.UpperLeftCorner.Y + 42, graphic.LowerRightCorner.X - pad, graphic.LowerRightCorner.Y - pad));
+
+        irr::core::rect<irr::s32> w(wind.UpperLeftCorner.X + pad, wind.UpperLeftCorner.Y + 42, wind.LowerRightCorner.X - pad, wind.LowerRightCorner.Y - pad);
+        irr::s32 half = w.getWidth() / 2;
+        drawInstrumentValue(irr::core::rect<irr::s32>(w.UpperLeftCorner.X, w.UpperLeftCorner.Y, w.UpperLeftCorner.X + half - 8, w.UpperLeftCorner.Y + 86), "APP WIND", formatInstrumentFloat(guiInstrumentData.apparentWindRelativeDeg, 0), "deg rel", warning);
+        drawInstrumentValue(irr::core::rect<irr::s32>(w.UpperLeftCorner.X, w.UpperLeftCorner.Y + 104, w.UpperLeftCorner.X + half - 8, w.LowerRightCorner.Y), "WIND SPD", formatInstrumentFloat(guiInstrumentData.windSpeedKts, 1), "kt", warning);
+        drawInstrumentValue(irr::core::rect<irr::s32>(w.UpperLeftCorner.X + half + 8, w.UpperLeftCorner.Y, w.LowerRightCorner.X, w.UpperLeftCorner.Y + 86), "TIDAL SET", formatInstrumentFloat(guiInstrumentData.currentDirectionDeg, 0), "deg", text);
+        drawInstrumentValue(irr::core::rect<irr::s32>(w.UpperLeftCorner.X + half + 8, w.UpperLeftCorner.Y + 104, w.LowerRightCorner.X, w.LowerRightCorner.Y), "TIDAL DRIFT", formatInstrumentFloat(guiInstrumentData.currentSpeedKts, 2), "kt", accent);
+
+        irr::core::rect<irr::s32> c(conditions.UpperLeftCorner.X + pad, conditions.UpperLeftCorner.Y + 42, conditions.LowerRightCorner.X - pad, conditions.LowerRightCorner.Y - pad);
+        half = c.getWidth() / 2;
+        drawInstrumentValue(irr::core::rect<irr::s32>(c.UpperLeftCorner.X, c.UpperLeftCorner.Y, c.UpperLeftCorner.X + half - 8, c.UpperLeftCorner.Y + 86), "VISIBILITY", formatInstrumentFloat(guiInstrumentData.visibilityNm, 1), "nm", text);
+        drawInstrumentValue(irr::core::rect<irr::s32>(c.UpperLeftCorner.X + half + 8, c.UpperLeftCorner.Y, c.LowerRightCorner.X, c.UpperLeftCorner.Y + 86), "RAIN", formatInstrumentFloat(guiInstrumentData.rain, 1), "/10", text);
+        drawInstrumentValue(irr::core::rect<irr::s32>(c.UpperLeftCorner.X, c.UpperLeftCorner.Y + 104, c.UpperLeftCorner.X + half - 8, c.LowerRightCorner.Y), "WEATHER", formatInstrumentFloat(guiInstrumentData.weather, 1), "/12", muted);
+        drawInstrumentValue(irr::core::rect<irr::s32>(c.UpperLeftCorner.X + half + 8, c.UpperLeftCorner.Y + 104, c.LowerRightCorner.X, c.LowerRightCorner.Y), "TIDE", formatInstrumentSignedFloat(guiInstrumentData.tideHeightM, 2), "m", muted);
+
+        if (guiCollided && showCollided) {
+            drawCollisionWarning();
+        }
+    }
+
+    void GUIMain::drawInstrumentPanel(const irr::core::rect<irr::s32>& rect, const std::string& title)
+    {
+        irr::video::IVideoDriver* driver = device->getVideoDriver();
+        irr::video::SColor panel(255, 13, 28, 35);
+        irr::video::SColor border(255, 53, 86, 96);
+        irr::video::SColor muted(255, 136, 160, 165);
+        driver->draw2DRectangle(panel, rect);
+        driver->draw2DRectangleOutline(rect, border);
+        drawInstrumentText(title, irr::core::rect<irr::s32>(rect.UpperLeftCorner.X + 12, rect.UpperLeftCorner.Y + 7, rect.LowerRightCorner.X - 12, rect.UpperLeftCorner.Y + 29), muted, false, true);
+    }
+
+    void GUIMain::drawInstrumentText(const std::string& text, const irr::core::rect<irr::s32>& rect, irr::video::SColor colour, bool centre, bool verticalCentre)
+    {
+        irr::gui::IGUIFont* font = guienv->getSkin()->getFont();
+        if (!font) {
+            return;
+        }
+        irr::core::stringw wide(text.c_str());
+        font->draw(wide.c_str(), rect, colour, centre, verticalCentre);
+    }
+
+    void GUIMain::drawInstrumentValue(const irr::core::rect<irr::s32>& rect, const std::string& label, const std::string& value, const std::string& unit, irr::video::SColor valueColour)
+    {
+        irr::video::SColor muted(255, 136, 160, 165);
+        drawInstrumentText(label, irr::core::rect<irr::s32>(rect.UpperLeftCorner.X, rect.UpperLeftCorner.Y, rect.LowerRightCorner.X, rect.UpperLeftCorner.Y + 20), muted, true, true);
+        drawInstrumentText(value, irr::core::rect<irr::s32>(rect.UpperLeftCorner.X, rect.UpperLeftCorner.Y + 20, rect.LowerRightCorner.X, rect.LowerRightCorner.Y - 18), valueColour, true, true);
+        drawInstrumentText(unit, irr::core::rect<irr::s32>(rect.UpperLeftCorner.X, rect.LowerRightCorner.Y - 22, rect.LowerRightCorner.X, rect.LowerRightCorner.Y), muted, true, true);
+    }
+
+    void GUIMain::drawInstrumentBar(const irr::core::rect<irr::s32>& rect, irr::f32 value, irr::f32 minimum, irr::f32 maximum, irr::video::SColor fillColour)
+    {
+        irr::video::IVideoDriver* driver = device->getVideoDriver();
+        irr::video::SColor base(255, 4, 10, 13);
+        irr::video::SColor muted(255, 136, 160, 165);
+        driver->draw2DRectangle(base, rect);
+        if (maximum <= minimum) {
+            return;
+        }
+        if (value < minimum) { value = minimum; }
+        if (value > maximum) { value = maximum; }
+
+        irr::s32 width = rect.LowerRightCorner.X - rect.UpperLeftCorner.X;
+        irr::s32 zeroX = rect.UpperLeftCorner.X;
+        if (minimum < 0 && maximum > 0) {
+            zeroX = rect.UpperLeftCorner.X + (irr::s32)((0 - minimum) / (maximum - minimum) * width);
+        }
+        irr::s32 valueX = rect.UpperLeftCorner.X + (irr::s32)((value - minimum) / (maximum - minimum) * width);
+        irr::core::rect<irr::s32> fillRect;
+        fillRect.UpperLeftCorner.X = valueX < zeroX ? valueX : zeroX;
+        fillRect.LowerRightCorner.X = valueX > zeroX ? valueX : zeroX;
+        fillRect.UpperLeftCorner.Y = rect.UpperLeftCorner.Y + 2;
+        fillRect.LowerRightCorner.Y = rect.LowerRightCorner.Y - 2;
+        driver->draw2DRectangle(fillColour, fillRect);
+        driver->draw2DLine(irr::core::vector2d<irr::s32>(zeroX, rect.UpperLeftCorner.Y), irr::core::vector2d<irr::s32>(zeroX, rect.LowerRightCorner.Y), muted);
+    }
+
+    void GUIMain::drawInstrumentVerticalBar(const irr::core::rect<irr::s32>& rect, irr::f32 value, irr::f32 minimum, irr::f32 maximum, irr::video::SColor fillColour)
+    {
+        irr::video::IVideoDriver* driver = device->getVideoDriver();
+        irr::video::SColor base(255, 4, 10, 13);
+        irr::video::SColor muted(255, 136, 160, 165);
+        driver->draw2DRectangle(base, rect);
+        driver->draw2DRectangleOutline(rect, muted);
+        if (maximum <= minimum) {
+            return;
+        }
+        if (value < minimum) { value = minimum; }
+        if (value > maximum) { value = maximum; }
+
+        irr::s32 height = rect.LowerRightCorner.Y - rect.UpperLeftCorner.Y;
+        irr::s32 zeroY = rect.LowerRightCorner.Y;
+        if (minimum < 0 && maximum > 0) {
+            zeroY = rect.LowerRightCorner.Y - (irr::s32)((0 - minimum) / (maximum - minimum) * height);
+        }
+        irr::s32 valueY = rect.LowerRightCorner.Y - (irr::s32)((value - minimum) / (maximum - minimum) * height);
+
+        irr::core::rect<irr::s32> fillRect;
+        fillRect.UpperLeftCorner.X = rect.UpperLeftCorner.X + 3;
+        fillRect.LowerRightCorner.X = rect.LowerRightCorner.X - 3;
+        fillRect.UpperLeftCorner.Y = valueY < zeroY ? valueY : zeroY;
+        fillRect.LowerRightCorner.Y = valueY > zeroY ? valueY : zeroY;
+        driver->draw2DRectangle(fillColour, fillRect);
+        driver->draw2DLine(irr::core::vector2d<irr::s32>(rect.UpperLeftCorner.X, zeroY), irr::core::vector2d<irr::s32>(rect.LowerRightCorner.X, zeroY), muted);
+    }
+
+    void GUIMain::drawInstrumentNeedle(const irr::core::position2d<irr::s32>& centre, irr::s32 radius, irr::f32 angleDeg, irr::video::SColor colour)
+    {
+        irr::f32 angleRad = angleDeg * irr::core::DEGTORAD;
+        irr::core::position2d<irr::s32> tip(
+            centre.X + (irr::s32)(std::sin(angleRad) * radius),
+            centre.Y - (irr::s32)(std::cos(angleRad) * radius));
+        drawInstrumentArrow(centre, tip, colour);
+    }
+
+    void GUIMain::drawInstrumentArrow(const irr::core::position2d<irr::s32>& start, const irr::core::position2d<irr::s32>& end, irr::video::SColor colour)
+    {
+        irr::video::IVideoDriver* driver = device->getVideoDriver();
+        driver->draw2DLine(start, end, colour);
+
+        irr::f32 dx = (irr::f32)(end.X - start.X);
+        irr::f32 dy = (irr::f32)(end.Y - start.Y);
+        irr::f32 length = std::sqrt(dx * dx + dy * dy);
+        if (length < 1) {
+            return;
+        }
+
+        irr::f32 ux = dx / length;
+        irr::f32 uy = dy / length;
+        irr::f32 px = -uy;
+        irr::f32 py = ux;
+        irr::s32 headLength = 9;
+        irr::s32 headWidth = 5;
+        irr::core::position2d<irr::s32> left(
+            end.X - (irr::s32)(ux * headLength) + (irr::s32)(px * headWidth),
+            end.Y - (irr::s32)(uy * headLength) + (irr::s32)(py * headWidth));
+        irr::core::position2d<irr::s32> right(
+            end.X - (irr::s32)(ux * headLength) - (irr::s32)(px * headWidth),
+            end.Y - (irr::s32)(uy * headLength) - (irr::s32)(py * headWidth));
+        driver->draw2DLine(end, left, colour);
+        driver->draw2DLine(end, right, colour);
+    }
+
+    void GUIMain::drawInstrumentTriangle(const irr::core::position2d<irr::s32>& centre, irr::s32 size, irr::f32 angleDeg, irr::video::SColor colour)
+    {
+        irr::video::IVideoDriver* driver = device->getVideoDriver();
+        irr::f32 angleRad = angleDeg * irr::core::DEGTORAD;
+        irr::f32 ux = std::sin(angleRad);
+        irr::f32 uy = -std::cos(angleRad);
+        irr::f32 px = -uy;
+        irr::f32 py = ux;
+
+        irr::core::position2d<irr::s32> tip(
+            centre.X + (irr::s32)(ux * size),
+            centre.Y + (irr::s32)(uy * size));
+        irr::core::position2d<irr::s32> baseLeft(
+            centre.X - (irr::s32)(ux * size * 0.65f) + (irr::s32)(px * size * 0.65f),
+            centre.Y - (irr::s32)(uy * size * 0.65f) + (irr::s32)(py * size * 0.65f));
+        irr::core::position2d<irr::s32> baseRight(
+            centre.X - (irr::s32)(ux * size * 0.65f) - (irr::s32)(px * size * 0.65f),
+            centre.Y - (irr::s32)(uy * size * 0.65f) - (irr::s32)(py * size * 0.65f));
+
+        irr::s32 steps = size * 2;
+        for (irr::s32 i = 0; i <= steps; ++i) {
+            irr::f32 t = (irr::f32)i / (irr::f32)steps;
+            irr::core::position2d<irr::s32> left(
+                tip.X + (irr::s32)((baseLeft.X - tip.X) * t),
+                tip.Y + (irr::s32)((baseLeft.Y - tip.Y) * t));
+            irr::core::position2d<irr::s32> right(
+                tip.X + (irr::s32)((baseRight.X - tip.X) * t),
+                tip.Y + (irr::s32)((baseRight.Y - tip.Y) * t));
+            driver->draw2DLine(left, right, colour);
+        }
+    }
+
+    void GUIMain::drawInstrumentCircleScale(const irr::core::position2d<irr::s32>& centre, irr::s32 radius, irr::f32 maximumValue, bool signedScale, irr::video::SColor muted, irr::video::SColor portColour, irr::video::SColor stbdColour)
+    {
+        irr::video::IVideoDriver* driver = device->getVideoDriver();
+        driver->draw2DPolygon(centre, radius, muted, 64);
+
+        if (signedScale) {
+            for (irr::s32 value = -30; value <= 30; value += 10) {
+                irr::f32 angleDeg = (irr::f32)value / maximumValue * 140.0f;
+                irr::f32 angleRad = angleDeg * irr::core::DEGTORAD;
+                irr::video::SColor colour = value < 0 ? portColour : (value > 0 ? stbdColour : muted);
+                irr::s32 inner = radius - (value % 30 == 0 ? 12 : 8);
+                irr::core::position2d<irr::s32> tickInner(
+                    centre.X + (irr::s32)(std::sin(angleRad) * inner),
+                    centre.Y - (irr::s32)(std::cos(angleRad) * inner));
+                irr::core::position2d<irr::s32> tickOuter(
+                    centre.X + (irr::s32)(std::sin(angleRad) * radius),
+                    centre.Y - (irr::s32)(std::cos(angleRad) * radius));
+                driver->draw2DLine(tickInner, tickOuter, colour);
+                if (value % 10 == 0) {
+                    irr::s32 labelRadius = radius + 15;
+                    drawInstrumentText(formatInstrumentFloat(std::fabs((irr::f32)value), 0),
+                        irr::core::rect<irr::s32>(
+                            centre.X + (irr::s32)(std::sin(angleRad) * labelRadius) - 16,
+                            centre.Y - (irr::s32)(std::cos(angleRad) * labelRadius) - 9,
+                            centre.X + (irr::s32)(std::sin(angleRad) * labelRadius) + 16,
+                            centre.Y - (irr::s32)(std::cos(angleRad) * labelRadius) + 9),
+                        colour, true, true);
+                }
+            }
+        } else {
+            for (irr::s32 bearing = 0; bearing < 360; bearing += 30) {
+                irr::f32 angleRad = bearing * irr::core::DEGTORAD;
+                irr::s32 inner = radius - (bearing % 90 == 0 ? 12 : 7);
+                irr::core::position2d<irr::s32> tickInner(
+                    centre.X + (irr::s32)(std::sin(angleRad) * inner),
+                    centre.Y - (irr::s32)(std::cos(angleRad) * inner));
+                irr::core::position2d<irr::s32> tickOuter(
+                    centre.X + (irr::s32)(std::sin(angleRad) * radius),
+                    centre.Y - (irr::s32)(std::cos(angleRad) * radius));
+                driver->draw2DLine(tickInner, tickOuter, muted);
+            }
+        }
+    }
+
+    void GUIMain::drawInstrumentGyroGraphic(const irr::core::rect<irr::s32>& rect)
+    {
+        irr::video::SColor muted(255, 136, 160, 165);
+        irr::video::SColor text(255, 222, 239, 238);
+        irr::video::SColor accent(255, 81, 213, 197);
+        irr::video::SColor warning(255, 230, 182, 80);
+        irr::s32 radius = rect.getHeight() / 2 - 10;
+        if (radius > rect.getWidth() / 3) {
+            radius = rect.getWidth() / 3;
+        }
+        irr::core::position2d<irr::s32> centre(rect.UpperLeftCorner.X + rect.getWidth() / 2, rect.UpperLeftCorner.Y + rect.getHeight() / 2 + 4);
+        drawInstrumentCircleScale(centre, radius, 180.0f, false, muted, warning, accent);
+
+        irr::video::IVideoDriver* driver = device->getVideoDriver();
+        for (irr::s32 bearing = 0; bearing < 360; bearing += 30) {
+            irr::f32 displayAngle = bearing - guiInstrumentData.headingDeg;
+            irr::f32 angleRad = displayAngle * irr::core::DEGTORAD;
+            irr::s32 labelRadius = radius - 14;
+            std::string label;
+            if (bearing == 0) {
+                label = "N";
+            } else if (bearing == 90) {
+                label = "E";
+            } else if (bearing == 180) {
+                label = "S";
+            } else if (bearing == 270) {
+                label = "W";
+            } else {
+                label = formatInstrumentFloat((irr::f32)bearing, 0);
+            }
+            drawInstrumentText(label,
+                irr::core::rect<irr::s32>(
+                    centre.X + (irr::s32)(std::sin(angleRad) * labelRadius) - 18,
+                    centre.Y - (irr::s32)(std::cos(angleRad) * labelRadius) - 8,
+                    centre.X + (irr::s32)(std::sin(angleRad) * labelRadius) + 18,
+                    centre.Y - (irr::s32)(std::cos(angleRad) * labelRadius) + 8),
+                bearing % 90 == 0 ? accent : muted, true, true);
+        }
+
+        driver->draw2DLine(irr::core::position2d<irr::s32>(centre.X, centre.Y - radius - 5), irr::core::position2d<irr::s32>(centre.X - 7, centre.Y - radius + 8), warning);
+        driver->draw2DLine(irr::core::position2d<irr::s32>(centre.X, centre.Y - radius - 5), irr::core::position2d<irr::s32>(centre.X + 7, centre.Y - radius + 8), warning);
+        drawInstrumentNeedle(centre, radius - 8, guiInstrumentData.cogDeg - guiInstrumentData.headingDeg, warning);
+        driver->draw2DPolygon(centre, 3, text, 12);
+        drawInstrumentText("HDG " + formatInstrumentFloat(guiInstrumentData.headingDeg, 0), irr::core::rect<irr::s32>(rect.UpperLeftCorner.X, rect.LowerRightCorner.Y - 28, centre.X - 4, rect.LowerRightCorner.Y), accent, true, true);
+        drawInstrumentText("COG " + formatInstrumentFloat(guiInstrumentData.cogDeg, 0), irr::core::rect<irr::s32>(centre.X + 4, rect.LowerRightCorner.Y - 28, rect.LowerRightCorner.X, rect.LowerRightCorner.Y), warning, true, true);
+    }
+
+    void GUIMain::drawInstrumentRateOfTurnGraphic(const irr::core::rect<irr::s32>& rect)
+    {
+        irr::video::SColor muted(255, 136, 160, 165);
+        irr::video::SColor text(255, 222, 239, 238);
+        irr::video::SColor portColour(255, 226, 88, 83);
+        irr::video::SColor stbdColour(255, 90, 224, 116);
+        irr::video::SColor warning(255, 230, 182, 80);
+        irr::s32 radius = rect.getHeight() / 2 - 18;
+        if (radius > rect.getWidth() / 4) {
+            radius = rect.getWidth() / 4;
+        }
+        irr::core::position2d<irr::s32> centre(rect.UpperLeftCorner.X + rect.getWidth() / 2, rect.UpperLeftCorner.Y + rect.getHeight() / 2 + 4);
+        drawInstrumentCircleScale(centre, radius, 30.0f, true, muted, portColour, stbdColour);
+
+        irr::f32 turn = guiInstrumentData.rateOfTurnDegPerMin;
+        if (turn < -30) { turn = -30; }
+        if (turn > 30) { turn = 30; }
+        drawInstrumentNeedle(centre, radius - 12, turn / 30.0f * 140.0f, warning);
+        device->getVideoDriver()->draw2DPolygon(centre, radius / 3, irr::video::SColor(255, 5, 14, 18), 32);
+        device->getVideoDriver()->draw2DPolygon(centre, radius / 3, muted, 32);
+        drawInstrumentText(formatInstrumentFloat(std::fabs(guiInstrumentData.rateOfTurnDegPerMin), 1),
+            irr::core::rect<irr::s32>(centre.X - radius / 2, centre.Y - 12, centre.X + radius / 2, centre.Y + 12),
+            text, true, true);
+        drawInstrumentText(guiInstrumentData.rateOfTurnDegPerMin > 0 ? "STBD" : (guiInstrumentData.rateOfTurnDegPerMin < 0 ? "PORT" : "MID"),
+            irr::core::rect<irr::s32>(centre.X - radius / 2, centre.Y + 12, centre.X + radius / 2, centre.Y + 32),
+            guiInstrumentData.rateOfTurnDegPerMin > 0 ? stbdColour : (guiInstrumentData.rateOfTurnDegPerMin < 0 ? portColour : muted), true, true);
+    }
+
+    void GUIMain::drawInstrumentWindCurrentGraphic(const irr::core::rect<irr::s32>& rect)
+    {
+        irr::video::SColor muted(255, 136, 160, 165);
+        irr::video::SColor text(255, 222, 239, 238);
+        irr::video::SColor windColour(255, 90, 224, 116);
+        irr::video::SColor currentColour(255, 81, 213, 197);
+        irr::video::SColor warning(255, 230, 182, 80);
+        irr::s32 radius = rect.getHeight() / 2 - 18;
+        if (radius > rect.getWidth() / 4) {
+            radius = rect.getWidth() / 4;
+        }
+        irr::core::position2d<irr::s32> centre(rect.UpperLeftCorner.X + rect.getWidth() / 2, rect.UpperLeftCorner.Y + rect.getHeight() / 2 + 4);
+        drawInstrumentCircleScale(centre, radius, 180.0f, false, muted, warning, windColour);
+
+        drawInstrumentText("BOW", irr::core::rect<irr::s32>(centre.X - 24, centre.Y - radius - 22, centre.X + 24, centre.Y - radius - 4), text, true, true);
+        device->getVideoDriver()->draw2DLine(irr::core::position2d<irr::s32>(centre.X, centre.Y - radius + 6), irr::core::position2d<irr::s32>(centre.X, centre.Y + radius - 6), muted);
+        device->getVideoDriver()->draw2DLine(irr::core::position2d<irr::s32>(centre.X - radius + 6, centre.Y), irr::core::position2d<irr::s32>(centre.X + radius - 6, centre.Y), muted);
+
+        irr::f32 windLength = guiInstrumentData.apparentWindSpeedKts / 30.0f;
+        if (windLength > 1) { windLength = 1; }
+        if (windLength < 0.25f) { windLength = 0.25f; }
+        drawInstrumentNeedle(centre, (irr::s32)((radius - 12) * windLength), guiInstrumentData.apparentWindRelativeDeg, windColour);
+
+        irr::f32 currentRelative = guiInstrumentData.currentDirectionDeg - guiInstrumentData.headingDeg;
+        while (currentRelative > 180) { currentRelative -= 360; }
+        while (currentRelative < -180) { currentRelative += 360; }
+        irr::f32 currentLength = guiInstrumentData.currentSpeedKts / 5.0f;
+        if (currentLength > 1) { currentLength = 1; }
+        if (currentLength < 0.2f) { currentLength = 0.2f; }
+        drawInstrumentNeedle(centre, (irr::s32)((radius - 22) * currentLength), currentRelative, currentColour);
+
+        drawInstrumentText("WIND", irr::core::rect<irr::s32>(rect.UpperLeftCorner.X, rect.LowerRightCorner.Y - 24, centre.X - 4, rect.LowerRightCorner.Y), windColour, true, true);
+        drawInstrumentText("CURRENT", irr::core::rect<irr::s32>(centre.X + 4, rect.LowerRightCorner.Y - 24, rect.LowerRightCorner.X, rect.LowerRightCorner.Y), currentColour, true, true);
+    }
+
+    void GUIMain::drawInstrumentVesselMotionGraphic(const irr::core::rect<irr::s32>& rect)
+    {
+        irr::video::IVideoDriver* driver = device->getVideoDriver();
+        irr::video::SColor hull(255, 222, 239, 238);
+        irr::video::SColor muted(255, 136, 160, 165);
+        irr::video::SColor inactive(255, 92, 110, 114);
+        irr::video::SColor stbdGreen(255, 90, 224, 116);
+        irr::video::SColor danger(255, 226, 88, 83);
+
+        irr::core::position2d<irr::s32> centre(rect.UpperLeftCorner.X + rect.getWidth() / 2, rect.UpperLeftCorner.Y + rect.getHeight() / 2 - 2);
+        irr::s32 halfWidth = rect.getWidth() / 7;
+        irr::s32 halfHeight = rect.getHeight() / 2 - 20;
+        irr::core::position2d<irr::s32> bow(centre.X, centre.Y - halfHeight);
+        irr::core::position2d<irr::s32> portShoulder(centre.X - halfWidth, centre.Y - halfHeight / 3);
+        irr::core::position2d<irr::s32> portStern(centre.X - halfWidth, centre.Y + halfHeight);
+        irr::core::position2d<irr::s32> stbdStern(centre.X + halfWidth, centre.Y + halfHeight);
+        irr::core::position2d<irr::s32> stbdShoulder(centre.X + halfWidth, centre.Y - halfHeight / 3);
+        driver->draw2DLine(bow, portShoulder, hull);
+        driver->draw2DLine(portShoulder, portStern, hull);
+        driver->draw2DLine(portStern, stbdStern, hull);
+        driver->draw2DLine(stbdStern, stbdShoulder, hull);
+        driver->draw2DLine(stbdShoulder, bow, hull);
+
+        irr::f32 forwardSpeed = guiInstrumentData.speedThroughWaterKts;
+        irr::s32 bowY = centre.Y - halfHeight / 2;
+        irr::s32 sternY = centre.Y + halfHeight / 2;
+        irr::s32 lateralOffset = halfWidth / 2;
+        bool movingAhead = forwardSpeed > 0.05f;
+        bool movingAstern = forwardSpeed < -0.05f;
+        bool bowRight = guiInstrumentData.bowThruster > 0.03f;
+        bool bowLeft = guiInstrumentData.bowThruster < -0.03f;
+        bool sternRight = guiInstrumentData.sternThruster > 0.03f;
+        bool sternLeft = guiInstrumentData.sternThruster < -0.03f;
+
+        drawInstrumentTriangle(irr::core::position2d<irr::s32>(centre.X, centre.Y - 34), 13, 0, movingAhead ? stbdGreen : inactive);
+        drawInstrumentTriangle(irr::core::position2d<irr::s32>(centre.X, centre.Y + 34), 13, 180, movingAstern ? danger : inactive);
+        drawInstrumentTriangle(irr::core::position2d<irr::s32>(centre.X - lateralOffset, bowY), 10, 270, bowLeft ? danger : inactive);
+        drawInstrumentTriangle(irr::core::position2d<irr::s32>(centre.X + lateralOffset, bowY), 10, 90, bowRight ? stbdGreen : inactive);
+        drawInstrumentTriangle(irr::core::position2d<irr::s32>(centre.X - lateralOffset, sternY), 10, 270, sternLeft ? danger : inactive);
+        drawInstrumentTriangle(irr::core::position2d<irr::s32>(centre.X + lateralOffset, sternY), 10, 90, sternRight ? stbdGreen : inactive);
+
+        drawInstrumentText("BOW", irr::core::rect<irr::s32>(rect.UpperLeftCorner.X, bowY - 10, centre.X - halfWidth - 8, bowY + 10), muted, true, true);
+        drawInstrumentText("STERN", irr::core::rect<irr::s32>(rect.UpperLeftCorner.X, sternY - 10, centre.X - halfWidth - 8, sternY + 10), muted, true, true);
+        std::string speedText = formatInstrumentFloat(std::fabs(forwardSpeed), 1) + " kt";
+        irr::core::rect<irr::s32> speedRect(centre.X - halfWidth, centre.Y - 12, centre.X + halfWidth, centre.Y + 12);
+        drawInstrumentText(speedText, speedRect + irr::core::position2d<irr::s32>(1, 0), muted, true, true);
+        drawInstrumentText(speedText, speedRect + irr::core::position2d<irr::s32>(0, 1), muted, true, true);
+        drawInstrumentText(speedText, speedRect, muted, true, true);
+    }
+
+    void GUIMain::smoothInstrumentData(const InstrumentData& newData)
+    {
+        if (!guiInstrumentDataInitialised || !guiInstrumentData.valid) {
+            guiInstrumentData = newData;
+            guiInstrumentDataInitialised = true;
+            return;
+        }
+
+        InstrumentData smoothed = newData;
+        const irr::f32 slow = 0.08f;
+        const irr::f32 medium = 0.12f;
+        const irr::f32 controls = 0.18f;
+
+        smoothed.longitudeDeg = smoothInstrumentValue(guiInstrumentData.longitudeDeg, newData.longitudeDeg, slow);
+        smoothed.latitudeDeg = smoothInstrumentValue(guiInstrumentData.latitudeDeg, newData.latitudeDeg, slow);
+        smoothed.posX = smoothInstrumentValue(guiInstrumentData.posX, newData.posX, slow);
+        smoothed.posZ = smoothInstrumentValue(guiInstrumentData.posZ, newData.posZ, slow);
+
+        smoothed.headingDeg = smoothInstrumentAngle(guiInstrumentData.headingDeg, newData.headingDeg, medium);
+        smoothed.cogDeg = smoothInstrumentAngle(guiInstrumentData.cogDeg, newData.cogDeg, medium);
+        smoothed.sogKts = smoothInstrumentValue(guiInstrumentData.sogKts, newData.sogKts, slow);
+        smoothed.speedThroughWaterKts = smoothInstrumentValue(guiInstrumentData.speedThroughWaterKts, newData.speedThroughWaterKts, slow);
+        smoothed.rateOfTurnDegPerMin = smoothInstrumentValue(guiInstrumentData.rateOfTurnDegPerMin, newData.rateOfTurnDegPerMin, slow);
+
+        smoothed.depthM = smoothInstrumentValue(guiInstrumentData.depthM, newData.depthM, slow);
+        smoothed.depthBelowKeelM = smoothInstrumentValue(guiInstrumentData.depthBelowKeelM, newData.depthBelowKeelM, slow);
+        smoothed.wheelDeg = smoothInstrumentValue(guiInstrumentData.wheelDeg, newData.wheelDeg, controls);
+        smoothed.rudderDeg = smoothInstrumentValue(guiInstrumentData.rudderDeg, newData.rudderDeg, controls);
+        smoothed.portEngineCommand = smoothInstrumentValue(guiInstrumentData.portEngineCommand, newData.portEngineCommand, controls);
+        smoothed.stbdEngineCommand = smoothInstrumentValue(guiInstrumentData.stbdEngineCommand, newData.stbdEngineCommand, controls);
+        smoothed.portEngineRpm = smoothInstrumentValue(guiInstrumentData.portEngineRpm, newData.portEngineRpm, medium);
+        smoothed.stbdEngineRpm = smoothInstrumentValue(guiInstrumentData.stbdEngineRpm, newData.stbdEngineRpm, medium);
+        smoothed.bowThruster = smoothInstrumentValue(guiInstrumentData.bowThruster, newData.bowThruster, controls);
+        smoothed.sternThruster = smoothInstrumentValue(guiInstrumentData.sternThruster, newData.sternThruster, controls);
+
+        smoothed.pitchDeg = smoothInstrumentValue(guiInstrumentData.pitchDeg, newData.pitchDeg, slow);
+        smoothed.rollDeg = smoothInstrumentValue(guiInstrumentData.rollDeg, newData.rollDeg, slow);
+        smoothed.weather = smoothInstrumentValue(guiInstrumentData.weather, newData.weather, slow);
+        smoothed.rain = smoothInstrumentValue(guiInstrumentData.rain, newData.rain, slow);
+        smoothed.visibilityNm = smoothInstrumentValue(guiInstrumentData.visibilityNm, newData.visibilityNm, slow);
+        smoothed.windDirectionTrueDeg = smoothInstrumentAngle(guiInstrumentData.windDirectionTrueDeg, newData.windDirectionTrueDeg, slow);
+        smoothed.windSpeedKts = smoothInstrumentValue(guiInstrumentData.windSpeedKts, newData.windSpeedKts, slow);
+        smoothed.apparentWindFromDeg = smoothInstrumentAngle(guiInstrumentData.apparentWindFromDeg, newData.apparentWindFromDeg, slow);
+        smoothed.apparentWindRelativeDeg = smoothInstrumentAngle(guiInstrumentData.apparentWindRelativeDeg, newData.apparentWindRelativeDeg, slow);
+        smoothed.apparentWindSpeedKts = smoothInstrumentValue(guiInstrumentData.apparentWindSpeedKts, newData.apparentWindSpeedKts, slow);
+        smoothed.currentDirectionDeg = smoothInstrumentAngle(guiInstrumentData.currentDirectionDeg, newData.currentDirectionDeg, slow);
+        smoothed.currentSpeedKts = smoothInstrumentValue(guiInstrumentData.currentSpeedKts, newData.currentSpeedKts, slow);
+        smoothed.tideHeightM = smoothInstrumentValue(guiInstrumentData.tideHeightM, newData.tideHeightM, slow);
+
+        guiInstrumentData = smoothed;
+    }
+
+    irr::f32 GUIMain::smoothInstrumentValue(irr::f32 current, irr::f32 target, irr::f32 alpha) const
+    {
+        return current + (target - current) * alpha;
+    }
+
+    irr::f32 GUIMain::smoothInstrumentAngle(irr::f32 current, irr::f32 target, irr::f32 alpha) const
+    {
+        irr::f32 delta = target - current;
+        while (delta > 180) { delta -= 360; }
+        while (delta < -180) { delta += 360; }
+        irr::f32 smoothed = current + delta * alpha;
+        while (smoothed >= 360) { smoothed -= 360; }
+        while (smoothed < 0) { smoothed += 360; }
+        return smoothed;
+    }
+
+    std::string GUIMain::formatInstrumentFloat(irr::f32 value, int precision) const
+    {
+        char tempStr[100];
+        if (precision <= 0) {
+            snprintf(tempStr, 100, "%.0f", value);
+        } else if (precision == 1) {
+            snprintf(tempStr, 100, "%.1f", value);
+        } else if (precision == 2) {
+            snprintf(tempStr, 100, "%.2f", value);
+        } else if (precision == 4) {
+            snprintf(tempStr, 100, "%.4f", value);
+        } else {
+            snprintf(tempStr, 100, "%.3f", value);
+        }
+        return std::string(tempStr);
+    }
+
+    std::string GUIMain::formatInstrumentSignedFloat(irr::f32 value, int precision) const
+    {
+        std::string formatted = formatInstrumentFloat(value, precision);
+        if (value > 0) {
+            formatted.insert(0, "+");
+        }
+        return formatted;
+    }
+
+    std::string GUIMain::formatInstrumentPercent(irr::f32 value) const
+    {
+        std::string formatted = formatInstrumentFloat(value * 100, 0);
+        if (value > 0) {
+            formatted.insert(0, "+");
+        }
+        formatted.append("%");
+        return formatted;
+    }
+
+    std::string GUIMain::formatInstrumentPortStarboard(irr::f32 value, int precision) const
+    {
+        irr::f32 absoluteValue = std::fabs(value);
+        if (absoluteValue < 0.05f) {
+            return "0.0 MID";
+        }
+
+        std::string formatted = formatInstrumentFloat(absoluteValue, precision);
+        formatted.append(value > 0 ? " STBD" : " PORT");
+        return formatted;
     }
 
     void GUIMain::setExtraControlsWindowVisible(bool windowVisible)

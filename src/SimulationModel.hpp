@@ -47,6 +47,7 @@ class Sound;
 #include "ControlVisualiser.hpp"
 #include "Lines.hpp"
 #include "OperatingModeEnum.hpp"
+#include "InstrumentData.hpp"
 
 class SimulationModel //Start of the 'Model' part of MVC
 {
@@ -371,6 +372,8 @@ public:
     Lines* getLines(); // Get pointer to lines object
 
     void updateCameraVRPos(irr::core::quaternion quat, irr::core::vector3df pos, irr::core::vector2df lensShift);
+
+    InstrumentData getInstrumentData();
 
     void update();
   

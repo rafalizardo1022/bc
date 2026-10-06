@@ -18,9 +18,40 @@
 #include "../IniFile.hpp"
 #include "../Constants.hpp"
 #include "../Utilities.hpp"
+#include <cmath>
 #include <iostream>
 
 #define MAX_PX_IN_MAP 160000000
+
+namespace {
+
+irr::u32 findCurrentLegIndex(const std::vector<Leg>& legs, irr::f32 time)
+{
+    if (legs.empty()) {
+        return 0;
+    }
+
+    for (irr::u32 i = 0; i + 1 < legs.size(); i++) {
+        if (time >= legs.at(i).startTime && time < legs.at(i + 1).startTime) {
+            return i;
+        }
+    }
+
+    return legs.size() - 1;
+}
+
+void advanceRoutePosition(irr::core::vector2df& position, const Leg& leg, irr::f32 seconds)
+{
+    if (seconds <= 0) {
+        return;
+    }
+
+    const irr::f32 distanceM = seconds * leg.speed * KTS_TO_MPS;
+    position.X += distanceM * sin(leg.bearing * RAD_IN_DEG);
+    position.Y += distanceM * cos(leg.bearing * RAD_IN_DEG);
+}
+
+}
 
 //Constructor
 ControllerModel::ControllerModel(irr::IrrlichtDevice* device, GUIMain* gui, Network* network, std::string worldName, irr::u32 _zoomLevels)
@@ -48,6 +79,7 @@ ControllerModel::ControllerModel(irr::IrrlichtDevice* device, GUIMain* gui, Netw
 
     selectedShip = -1; //Used to signify own ship selected
     selectedLeg = -1; //Used to signify no leg selected
+    lastTime = 0;
 
     //construct path to world model
     std::string worldPath = "World/";
@@ -248,6 +280,9 @@ irr::f32 ControllerModel::latToZ(irr::f32 latitude) const
 
 void ControllerModel::update(const irr::f32& time, const ShipData& ownShipData, const std::vector<OtherShipDisplayData>& otherShipsData, const std::vector<PositionData>& buoysData, const irr::f32& weather, const irr::f32& visibility, const irr::f32& rain, bool& mobVisible, PositionData& mobData, const std::vector<AISData>& aisData, const irr::f32& windDirection, const irr::f32& windSpeed, const irr::f32& streamDirection, const irr::f32& streamSpeed, const bool& streamOverride)
 {
+    lastTime = time;
+    lastOtherShipsData = otherShipsData;
+
     //Check if current zoom is valid, if not return.
     if(!(currentZoom<zoomLevels)) {
         return;
@@ -409,6 +444,140 @@ void ControllerModel::updateSelectedLeg(irr::s32 index) //To be called from even
     //No guarantee from this that the selected leg is valid
 }
 
+void ControllerModel::clearSelectedLeg()
+{
+    selectedLeg = -1;
+}
+
+bool ControllerModel::getRoutePositionForLeg(irr::s32 ship, irr::s32 legIndex, irr::core::vector2df& routePosition) const
+{
+    if (ship <= 0) {
+        return false;
+    }
+
+    const irr::s32 shipIndex = ship - 1;
+    if (shipIndex < 0 || shipIndex >= (irr::s32)lastOtherShipsData.size()) {
+        return false;
+    }
+
+    const OtherShipDisplayData& shipData = lastOtherShipsData.at(shipIndex);
+    if (shipData.legs.empty()) {
+        return false;
+    }
+
+    const irr::s32 visibleLegs = (irr::s32)shipData.legs.size() - 1;
+    if (legIndex < 0 || legIndex > visibleLegs) {
+        return false;
+    }
+
+    const irr::u32 currentLeg = findCurrentLegIndex(shipData.legs, lastTime);
+    if (legIndex < (irr::s32)currentLeg) {
+        return false;
+    }
+
+    routePosition.X = shipData.X;
+    routePosition.Y = shipData.Z;
+
+    if ((irr::s32)currentLeg >= visibleLegs || legIndex == (irr::s32)currentLeg) {
+        return true;
+    }
+
+    advanceRoutePosition(routePosition, shipData.legs.at(currentLeg), shipData.legs.at(currentLeg + 1).startTime - lastTime);
+
+    for (irr::s32 leg = (irr::s32)currentLeg + 1; leg < legIndex && leg < visibleLegs; leg++) {
+        advanceRoutePosition(routePosition, shipData.legs.at(leg), shipData.legs.at(leg + 1).startTime - shipData.legs.at(leg).startTime);
+    }
+
+    return true;
+}
+
+bool ControllerModel::calculateLegFromPositionToScreenCentre(const irr::core::vector2df& startPosition, irr::f32& legCourse, irr::f32& legDistance) const
+{
+    const irr::core::vector2df targetPosition = gui->getScreenCentrePosition();
+    const irr::f32 deltaX = targetPosition.X - startPosition.X;
+    const irr::f32 deltaZ = targetPosition.Y - startPosition.Y;
+    const irr::f32 distanceM = sqrt(deltaX * deltaX + deltaZ * deltaZ);
+
+    legCourse = atan2(deltaX, deltaZ) * DEG_IN_RAD;
+    while (legCourse < 0) {
+        legCourse += 360.0f;
+    }
+    while (legCourse >= 360.0f) {
+        legCourse -= 360.0f;
+    }
+    legDistance = distanceM / M_IN_NM;
+
+    return true;
+}
+
+bool ControllerModel::calculateChangeLegToScreenCentre(irr::s32 ship, irr::s32 networkLeg, irr::f32 requestedSpeed, irr::s32& commandLeg, irr::f32& legCourse, irr::f32& legSpeed, irr::f32& legDistance) const
+{
+    if (networkLeg <= 0 || ship <= 0) {
+        return false;
+    }
+
+    const irr::s32 shipIndex = ship - 1;
+    if (shipIndex < 0 || shipIndex >= (irr::s32)lastOtherShipsData.size()) {
+        return false;
+    }
+
+    const OtherShipDisplayData& shipData = lastOtherShipsData.at(shipIndex);
+    const irr::s32 legIndex = networkLeg - 1;
+    if (legIndex < 0 || legIndex >= ((irr::s32)shipData.legs.size() - 1)) {
+        return false;
+    }
+
+    irr::core::vector2df startPosition;
+    if (!getRoutePositionForLeg(ship, legIndex, startPosition)) {
+        return false;
+    }
+
+    legSpeed = requestedSpeed;
+    if (fabs(legSpeed) < 0.01f) {
+        legSpeed = shipData.legs.at(legIndex).speed;
+    }
+    if (fabs(legSpeed) < 0.01f) {
+        legSpeed = 5.0f;
+    }
+
+    commandLeg = networkLeg;
+    return calculateLegFromPositionToScreenCentre(startPosition, legCourse, legDistance);
+}
+
+bool ControllerModel::calculateAddLegToScreenCentre(irr::s32 ship, irr::f32 requestedSpeed, irr::s32& commandAfterLeg, irr::f32& legCourse, irr::f32& legSpeed, irr::f32& legDistance) const
+{
+    if (ship <= 0) {
+        return false;
+    }
+
+    const irr::s32 shipIndex = ship - 1;
+    if (shipIndex < 0 || shipIndex >= (irr::s32)lastOtherShipsData.size()) {
+        return false;
+    }
+
+    const OtherShipDisplayData& shipData = lastOtherShipsData.at(shipIndex);
+    if (shipData.legs.empty()) {
+        return false;
+    }
+
+    const irr::s32 visibleLegs = (irr::s32)shipData.legs.size() - 1;
+    irr::core::vector2df startPosition;
+    if (!getRoutePositionForLeg(ship, visibleLegs, startPosition)) {
+        return false;
+    }
+
+    legSpeed = requestedSpeed;
+    if (fabs(legSpeed) < 0.01f && visibleLegs > 0) {
+        legSpeed = shipData.legs.at(visibleLegs - 1).speed;
+    }
+    if (fabs(legSpeed) < 0.01f) {
+        legSpeed = 5.0f;
+    }
+
+    commandAfterLeg = visibleLegs;
+    return calculateLegFromPositionToScreenCentre(startPosition, legCourse, legDistance);
+}
+
 void ControllerModel::setMouseDown(bool isMouseDown)
 {
     mouseDown = isMouseDown;
@@ -434,4 +603,15 @@ void ControllerModel::decreaseZoom()
         mapOffsetX*=scaleChange;
         mapOffsetZ*=scaleChange;
     }
+}
+
+void ControllerModel::centreMapAtScreenPoint(irr::core::position2d<irr::s32> screenPoint)
+{
+    if (!(currentZoom < zoomLevels)) {
+        return;
+    }
+
+    const irr::core::dimension2d<irr::u32> screenSize = driver->getScreenSize();
+    mapOffsetX += (irr::s32)(screenSize.Width / 2) - screenPoint.X;
+    mapOffsetZ += (irr::s32)(screenSize.Height / 2) - screenPoint.Y;
 }

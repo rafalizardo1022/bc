@@ -834,7 +834,7 @@ int main(int argc, char ** argv)
         hostname=IniFile::iniFileToString(userFolder + "/hostname.txt","hostname");
     }
 
-	//Start sound
+    //Start sound
 	Sound sound;
 
     OperatingMode::Mode mode = OperatingMode::Normal;
@@ -1184,8 +1184,9 @@ int main(int argc, char ** argv)
 
         }
         bool fullScreenRadar = guiMain.getLargeRadar();
+        bool instrumentDisplay = guiMain.getInstrumentDisplay();
         { IPROF("Render radar");
-        if (model.isRadarOn()) {
+        if (!instrumentDisplay && model.isRadarOn()) {
             //radar view portion
             if (graphicsHeight>graphicsHeight3d && (guiMain.getShowInterface() || fullScreenRadar)) {
                 model.setWaterVisible(false); //Hide the reflecting water, as this updates itself on drawAll()
@@ -1209,7 +1210,7 @@ int main(int argc, char ** argv)
         model.setMainCameraActive(); //Note that the NavLights expect the main camera to be active, so they know where they're being viewed from
 
         // Normal rendering
-        if (!fullScreenRadar) {
+        if (!fullScreenRadar && !instrumentDisplay) {
             if (guiMain.getShowInterface()) {
                 driver->setViewPort(irr::core::rect<irr::s32>(0, 0, graphicsWidth3d, graphicsHeight3d));
                 model.updateViewport(aspect3d);
